@@ -3,7 +3,7 @@
 # Angular CLI 22 needs Node >= 22.22.3, hence the Node 24 base for both stages.
 
 # ---- build ---------------------------------------------------------------
-FROM node:24-bookworm-slim AS build
+FROM node:26-bookworm-slim AS build
 WORKDIR /app
 ENV NG_CLI_ANALYTICS=false CI=true
 
@@ -17,7 +17,7 @@ RUN npm run build
 # ---- runtime -------------------------------------------------------------
 # The SSR server bundle (dist/techbazar-web/server/server.mjs) is self-contained: express, @angular/ssr and the app
 # are bundled by esbuild (its only bare import is node:module). So no node_modules are copied, which keeps the image small.
-FROM node:24-slim AS final
+FROM node:26-slim AS final
 WORKDIR /app
 ENV NODE_ENV=production \
     PORT=4000 \
