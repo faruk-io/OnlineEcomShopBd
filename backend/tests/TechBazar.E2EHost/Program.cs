@@ -82,8 +82,9 @@ app.UseWhen(c => !c.Request.Path.StartsWithSegments("/api/v1/auth"), b => b.UseR
 Directory.CreateDirectory(uploads);
 app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(uploads), RequestPath = "/uploads" });
 app.UseCors(Policies.Cors);
-app.UseRateLimiter();
 app.UseAuthentication();
+// After authentication on purpose: the per-user rate-limit partitions (checkout, global) need to know who is calling.
+app.UseRateLimiter();
 app.UseAuthorization();
 app.UseOutputCache();
 app.MapControllers();

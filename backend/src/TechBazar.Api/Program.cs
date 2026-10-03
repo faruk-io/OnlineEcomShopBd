@@ -100,8 +100,9 @@ app.UseStaticFiles(new StaticFileOptions
 });
 
 app.UseCors(Policies.Cors);
-app.UseRateLimiter();
 app.UseAuthentication();
+// After authentication on purpose: the per-user rate-limit partitions (checkout, global) need to know who is calling.
+app.UseRateLimiter();
 app.UseAuthorization();
 app.UseOutputCache();
 

@@ -476,4 +476,23 @@ public class SecurityApiTests(ApiFactory factory) : IClassFixture<ApiFactory>
             new { shippingMethod = "HomeDeliveryInsideDhaka", addressId = id, paymentMethod = "CashOnDelivery" }));
         Assert.Equal(HttpStatusCode.NotFound, steal.StatusCode);
     }
+
+    // ------------------------------------------------------------------ business-logic abuse
+    [Fact]
+    public async Task CouponGuessingThroughTheQuoteEndpointIsRateLimitedPerUser()
+    {
+        using var f = ApiFactory.WithConfig(("RateLimiting:Checkout:PermitLimit", "3"));
+        using var c = f.CreateClient();
+        async Task<string> Token() => (await (await c.PostJsonAsync("/api/v1/auth/register",
+            new { fullName = "Guesser", email = $"g{Guid.NewGuid():N}@example.com", password = "Passw0rdX" })).ReadAsync<AuthResponse>()).AccessToken;
+        async Task<HttpStatusCode> Quote(string token, string code) => (await c.SendAsync(new HttpRequestMessage(HttpMethod.Post, "/api/v1/checkout/quote")
+        { Content = JsonContent.Create(new { shippingMethod = "StorePickup", couponCode = code }) }.WithBearer(token))).StatusCode;
+
+        var attacker = await Token();
+        var codes = new List<HttpStatusCode>();
+        for (var i = 0; i < 6; i++) codes.Add(await Quote(attacker, "GUESS" + i));
+        Assert.Equal(3, codes.Count(x => x != HttpStatusCode.TooManyRequests));      // only 3 guesses per window ...
+        Assert.Equal(3, codes.Count(x => x == HttpStatusCode.TooManyRequests));
+        Assert.NotEqual(HttpStatusCode.TooManyRequests, await Quote(await Token(), "WELCOME10"));   // ... and another customer is not affected
+    }
 }

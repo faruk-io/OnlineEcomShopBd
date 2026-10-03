@@ -12,3 +12,12 @@ appsettings.Local.json
 uploads/
 .env.*
 !.env.example
+
+# Secrets / key material must never be committed (use user-secrets, environment variables or a secret manager)
+*.pfx
+*.p12
+*.pem
+*.key
+*.crt
+secrets.json
+appsettings.*.local.json

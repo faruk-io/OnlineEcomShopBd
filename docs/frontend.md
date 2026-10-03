@@ -64,5 +64,10 @@ forms link errors with `aria-describedby`/`aria-invalid`; tables use `caption` +
 * Seed product images are generated SVG placeholders; admin uploads are stored on local disk (`Storage:RootPath`) — use blob storage + CDN to scale out.
 * Reviews are display-only (no write endpoint yet); product data has none, so ratings show "No reviews yet".
 * Facet counts are per category (not recomputed for the currently selected filters).
-* The refresh token is in `localStorage`; move it to an `HttpOnly; Secure; SameSite` cookie (API + server.ts proxy) before production.
 * Behind a proxy, enable `ForwardedHeaders` in the API so auth rate limiting sees client IPs, not the SSR server's.
+
+## Phase 4 notes
+* **Auth**: the refresh token is an HttpOnly cookie the app cannot read; `tb.session.v1` in localStorage is only a non-secret hint that a session may exist.
+* **SSR server** (`src/server.ts`, helpers in `src/server-security.ts`): security headers, hash-based CSP computed per rendered page, compression,
+  `/api` + `/uploads` gateway with timeouts, `Set-Cookie` forwarding and a safe path allow-list. HSTS is opt-in (`HSTS=1`).
+* **Quality gates**: `npm run lint` (angular-eslint, templates + a11y), `npm test`, `npm run build` (bundle budgets: initial 450/550 kB), `npm run e2e` (Playwright).

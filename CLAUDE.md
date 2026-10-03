@@ -23,6 +23,7 @@ names, logos, text or images**). Brand: **TechBazar BD**. Currency: BDT (৳).
   src/TechBazar.Api             controllers, middleware, DI/pipeline wiring, Program.cs
   tests/TechBazar.UnitTests
   tests/TechBazar.IntegrationTests
+  tests/TechBazar.E2EHost       TEST-ONLY web host (SQLite, seeded) that Playwright drives; never deploy
 /frontend   Angular 22 storefront (`techbazar-web`): see docs/frontend.md
 /docs       architecture notes, ERD (Mermaid)
 ```
@@ -44,7 +45,20 @@ anything. Application never references Identity, ASP.NET or a DB provider.
   no data annotations on entities.
 - No MediatR/AutoMapper: plain services + projection (`Select`) to DTOs.
 - Catalog GET endpoints use output cache policies `Catalog` / `Autocomplete`.
-- Auth endpoints use rate-limit policy `auth`.
+- Auth endpoints use rate-limit policy `auth`; checkout pricing/ordering `checkout` (per user); everything under `/api` has a global ceiling.
+  `UseRateLimiter` runs **after** `UseAuthentication` (per-user partitions need the user).
+- **Deny by default**: `FallbackPolicy = RequireAuthenticatedUser`. A public endpoint must say `[AllowAnonymous]` **and** be added to the frozen
+  `AnonymousAllowList` in `SecurityApiTests` (the test fails otherwise); admin endpoints use `Policies.AdminOnly`. Never return 404 for
+  "exists but not yours" without a test (IDOR tests live in `SecurityApiTests`).
+- **Refresh token = HttpOnly cookie** (`tb_rt`, SameSite=Strict, Path `/api/v1/auth`) in web "cookie mode" (header `X-Refresh-Mode: cookie`);
+  body mode still exists for other clients. Never put the refresh token in JS-readable storage. Logout is by token possession; `logout-all` exists.
+- Never clear `ForwardedHeadersOptions` trust lists to "trust everything" (an empty list means *everyone*). Configure
+  `ForwardedHeaders:KnownProxies/KnownNetworks`; the SSR server appends to `X-Forwarded-For`.
+- Swagger is Development-only (`Swagger:Enabled` opts in elsewhere). Security headers come from `SecurityHeadersMiddleware`; do not log request/response
+  bodies, emails, tokens or URLs containing credentials (`RemoveAllLoggers()` on the SSLCommerz client; email body is Debug-only).
+- **Performance guardrails**: new read endpoints get a case in `QueryBudgetTests` (count must not grow with result size); aggregates run in SQL
+  (see `DashboardService.DailySales/TopProducts`, whose SQL Server translation is asserted in `SqlServerTranslationTests`); read paths use
+  `AsNoTracking`/projection. Index changes need a migration and a reason tied to a query (see `docs/performance.md`).
 - Secrets (JWT key, admin password, connection strings with passwords) live in
   **user-secrets / env vars**, never in git. Tests inject config in-memory.
 - Spec attributes for the future PC Builder use canonical keys: `Socket`, `RAM Type`
@@ -75,7 +89,7 @@ anything. Application never references Identity, ASP.NET or a DB provider.
   server) forward it to the .NET API (`API_URL`). Never hardcode an API origin.
 - HTTP interceptor order is `loading → error → auth` (auth innermost so it sees raw 401s). Errors reach callers as
   `ApiError` (`core/models/api.models.ts`); use `HttpContext` tokens `SKIP_AUTH`, `SILENT_ERRORS`, `BACKGROUND`.
-- Auth: access token **in memory only**, rotating refresh token in localStorage (`tb.refresh.v1`). Guards await
+- Auth: access token **in memory only**; the rotating refresh token is an **HttpOnly cookie** the app cannot read (`tb.session.v1` in localStorage is only a hint). Guards await
   `AuthService.whenReady()` (silent session restore) before deciding.
 - Guest state (`tb.cart.v1`, `tb.wishlist.v1`, `tb.compare.v1`) is loaded in `App` via `afterNextRender` so the first
   client render matches the SSR HTML. Cart/wishlist merge into the server on login (`POST /cart/merge`, `/wishlist/merge`).
@@ -91,6 +105,9 @@ anything. Application never references Identity, ASP.NET or a DB provider.
   (server evaluates every change; share link `/builder?b=CODE`), `features/admin` (own lazy shell behind `adminGuard`; every admin
   call is also enforced server-side). Gateway return lands on `/account/orders/:number?payment=success|failed|cancelled|pending`.
 - `/api` **and `/uploads`** are proxied to the API (`proxy.conf.json`, `src/server.ts`).
+- SSR server (`src/server.ts` + `src/server-security.ts`): security headers, per-page **hash-based CSP** (no `unsafe-inline` scripts - do not add inline
+  scripts/handlers; they will be blocked), compression, `/api` + `/uploads` gateway. Bundle budgets in `angular.json` fail the build (initial 450/550 kB).
+- Lint: `npm run lint` (angular-eslint incl. template a11y) must pass. E2E: `npm run e2e` (Playwright, `frontend/e2e/`, uses `backend/tests/TechBazar.E2EHost`).
 - Tests: Vitest via `ng test` (jsdom). Fake only the timers you need (`vi.useFakeTimers({ toFake: [...] })`) because
   faking `setTimeout` freezes Angular's zoneless scheduler; never `await fixture.whenStable()` while an HTTP request you
   must flush is pending.
@@ -115,6 +132,11 @@ npm start                                   # http://localhost:4200 (proxies /ap
 npm test -- --watch=false                   # Vitest unit tests (ng test)
 npm run build                               # production + SSR build
 API_URL=http://localhost:5080 npm run serve:ssr:techbazar-web   # http://localhost:4000 (SSR + /api proxy)
+npm run lint                                # angular-eslint (CI gate)
+npm run e2e                                 # Playwright; sandbox: PW_CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome (needs `ng build` first)
+# whole stack in Docker (SQL Server + API + web), see docs/docker.md
+cp .env.example .env && docker compose up --build
+# backend quality gates (CI): dotnet build -c Release -warnaserror ; dotnet format --verify-no-changes ; dotnet list package --vulnerable --include-transitive
 ```
 Seeding runs on API start in Development (`Seed:Enabled`), idempotent.
 
@@ -128,8 +150,10 @@ SSR rejects unknown `Host` headers: add your domain(s) to `security.allowedHosts
 
 ## Roadmap
 Phase 1 (done): domain, migration, seed, catalog + auth APIs, tests, Angular scaffold.
+Phase 4 (done): production hardening - OWASP review (`docs/security.md`: 16 findings fixed, each with a regression test), performance review
+(`docs/performance.md`), Playwright E2E, Dockerfiles + compose, GitHub Actions CI, ESLint + dotnet format gates.
 Phase 3 (done): checkout (addresses, shipping, coupons), orders + tracking + emails, COD + SSLCommerz sandbox, PC Builder with
 server-side compatibility, Admin panel (dashboard, product/category/brand/coupon CRUD, uploads, order status).
 Phase 2 (done): storefront (home, listing with URL-synced filters, product, compare, wishlist, cart with guest→server
 merge, auth, profile, order-history placeholder) + cart/wishlist/profile/onSale APIs.
-Next: reviews (write), admin user management, refunds via gateway API, bKash/Nagad direct, HttpOnly refresh cookie, real SMTP sender.
+Next: reviews (write), admin user management, refunds via gateway API, bKash/Nagad direct, real SMTP sender, email verification + password reset, image resizing/CDN, full-text search.

@@ -23,6 +23,7 @@ public static class Policies
     public const string Cors = "Frontend";
     public const string AuthRateLimit = "auth";
     public const string PublicRateLimit = "public";
+    public const string CheckoutRateLimit = "checkout";
     public const string CatalogCache = "Catalog";
     public const string AutocompleteCache = "Autocomplete";
     public const string AdminOnly = "AdminOnly";
@@ -95,6 +96,12 @@ public static class ServiceCollectionExtensions
             o.AddPolicy(Policies.PublicRateLimit, ctx => RateLimitPartition.GetFixedWindowLimiter(
                 "pub:" + (ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown"),
                 _ => new FixedWindowRateLimiterOptions { PermitLimit = publicPermit, Window = window, QueueLimit = 0, AutoReplenishment = true }));
+            // Pricing / ordering endpoints: a human checks out a handful of times a minute. Per signed-in user (falls back to IP), this also stops
+            // a logged-in account from brute-forcing coupon codes through the quote endpoint.
+            var checkoutPermit = cfg.GetValue("RateLimiting:Checkout:PermitLimit", 30);
+            o.AddPolicy(Policies.CheckoutRateLimit, ctx => RateLimitPartition.GetFixedWindowLimiter(
+                "co:" + (ctx.User.FindFirst("sub")?.Value ?? ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown"),
+                _ => new FixedWindowRateLimiterOptions { PermitLimit = checkoutPermit, Window = window, QueueLimit = 0, AutoReplenishment = true }));
             o.OnRejected = async (context, ct) =>
             {
                 if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retry))

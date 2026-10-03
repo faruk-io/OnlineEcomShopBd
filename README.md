@@ -50,9 +50,38 @@ npm run build && API_URL=http://localhost:5080 npm run serve:ssr:techbazar-web  
 ```
 Register a customer on `/register`. The admin panel is at `/admin` (sign in as the seeded admin). PC Builder: `/builder`.
 
+## Run everything with Docker (SQL Server included)
+```bash
+cp .env.example .env            # then fill in the three secrets (commands are in the file; never commit .env)
+docker compose up --build       # SQL Server + API (migrates & seeds in Development) + storefront
+# storefront http://localhost:4000   API/Swagger http://localhost:5080/swagger   admin: admin@techbazar.bd / SEED_ADMIN_PASSWORD
+```
+Details, resetting the database and what is *not* production-ready: [`docs/docker.md`](docs/docker.md). The Docker images were written
+and validated statically here (`docker compose config`); there was no Docker daemon in the authoring sandbox, so run the first build yourself.
+
+## Quality gates (what CI runs)
+```bash
+# backend (from /backend)
+dotnet build -c Release -warnaserror && dotnet format --verify-no-changes && dotnet test -c Release
+dotnet list package --vulnerable --include-transitive      # must report nothing
+# frontend (from /frontend)
+npm run lint && npm test -- --watch=false && npm run build && npm audit --omit=dev --audit-level=high
+# end-to-end (Playwright: real browser -> SSR server -> real API pipeline on a SQLite test host; Chromium via `npm run e2e:install`)
+npm run e2e                                                  # browse > filter > cart > register > checkout (COD) + security + guards + builder
+```
+`.github/workflows/ci.yml` runs these as `backend`, `frontend`, `e2e` and `docker` jobs; Dependabot is configured. In the authoring sandbox set
+`PW_CHROMIUM_PATH` to a preinstalled Chromium (see the header of `frontend/playwright.config.ts`).
+
+## Security & performance
+* [`docs/security.md`](docs/security.md): OWASP review, **every finding and fix with its regression test**, accepted risks, production checklist.
+* [`docs/performance.md`](docs/performance.md): measured query counts per endpoint, indexes, compression, bundle budgets.
+* Production configuration that matters: `Jwt__Key`, `Auth__RefreshCookie__Secure=Always`, `ForwardedHeaders__KnownNetworks__0=<your proxy CIDR>`,
+  `HSTS=1` (web), `Security__HttpsRedirection=false` (API behind a TLS proxy), `Swagger__Enabled` unset.
+
 ## Tests
 ```bash
-cd backend  && dotnet test                  # 320 unit + 79 integration (SQLite in-memory for tests only)
-cd frontend && npm test -- --watch=false    # 282 Vitest specs
+cd backend  && dotnet test                  # 338 unit + 143 integration (SQLite in-memory for tests only)
+cd frontend && npm test -- --watch=false    # 327 Vitest specs
+cd frontend && npm run e2e                  # 12 Playwright tests
 ```
-Screenshots of the storefront: [`docs/screenshots/`](docs/screenshots). Design notes: [`docs/frontend.md`](docs/frontend.md).
+Screenshots of the storefront: [`docs/screenshots/`](docs/screenshots). Design notes: [`docs/frontend.md`](docs/frontend.md), [`docs/architecture.md`](docs/architecture.md).

@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using TechBazar.Api.Extensions;
 using TechBazar.Application.Common;
 using TechBazar.Application.Orders;
 using TechBazar.Application.Payments;
@@ -48,6 +50,7 @@ public sealed class CheckoutController(ICheckoutService checkout) : ApiControlle
     /// <summary>Server-side price quote for the signed-in user's cart: lines, coupon, shipping and grand total.</summary>
     [HttpPost("quote")]
     [Authorize]
+    [EnableRateLimiting(Policies.CheckoutRateLimit)]
     public async Task<ActionResult<CheckoutQuoteDto>> Quote(CheckoutQuoteRequest request, CancellationToken ct) =>
         Ok(await checkout.QuoteAsync(User.UserId(), request, ct));
 }
@@ -66,6 +69,7 @@ public sealed class OrdersController(ICheckoutService checkout, IOrderService or
 
     /// <summary>Places the order from the server-side cart. Totals are recalculated here; nothing price-related is read from the request.</summary>
     [HttpPost]
+    [EnableRateLimiting(Policies.CheckoutRateLimit)]
     [ProducesResponseType(typeof(PlaceOrderResult), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Place(PlaceOrderRequest request, CancellationToken ct)
@@ -85,6 +89,7 @@ public sealed class OrdersController(ICheckoutService checkout, IOrderService or
 
     /// <summary>Starts a fresh online payment attempt (e.g. after a failed or abandoned one).</summary>
     [HttpPost("{orderNumber}/pay")]
+    [EnableRateLimiting(Policies.CheckoutRateLimit)]
     public async Task<ActionResult<PaymentRedirectDto>> Pay(string orderNumber, CancellationToken ct) =>
         Ok(await orders.RetryPaymentAsync(User.UserId(), orderNumber, ct));
 }
