@@ -8,4 +8,7 @@
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="TechBazar.UnitTests" />
+  </ItemGroup>
 </Project>

@@ -15,11 +15,7 @@ public sealed class ProductService(IApplicationDbContext db, ICategoryHierarchy 
         if (filtered is null) return new PagedResult<ProductListItemDto>([], query.Page, query.PageSize, 0);
 
         var total = await filtered.CountAsync(ct);
-        var items = await ApplySort(filtered, query.ParsedSort)
-            .Skip((query.Page - 1) * query.PageSize)
-            .Take(query.PageSize)
-            .Select(ProductProjections.ListItem)
-            .ToListAsync(ct);
+        var items = await BuildPageQuery(filtered, query).ToListAsync(ct);
 
         return new PagedResult<ProductListItemDto>(items, query.Page, query.PageSize, total);
     }
@@ -167,13 +163,22 @@ public sealed class ProductService(IApplicationDbContext db, ICategoryHierarchy 
         {
             foreach (var token in query.Q.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Take(5))
             {
-                var t = token;
-                products = products.Where(p => p.Name.Contains(t) || p.Sku.Contains(t) || p.Brand.Name.Contains(t) || p.Category.Name.Contains(t));
+                var pattern = TextSearch.Contains(token);
+                products = products.Where(p =>
+                    EF.Functions.Like(p.Name, pattern, TextSearch.Escape) || EF.Functions.Like(p.Sku, pattern, TextSearch.Escape) ||
+                    EF.Functions.Like(p.Brand.Name, pattern, TextSearch.Escape) || EF.Functions.Like(p.Category.Name, pattern, TextSearch.Escape));
             }
         }
 
         return products;
     }
+
+    /// <summary>Sort + page + projection (internal so tests can compile it against the SQL Server provider).</summary>
+    internal static IQueryable<ProductListItemDto> BuildPageQuery(IQueryable<Product> filtered, ProductListQuery query) =>
+        ApplySort(filtered, query.ParsedSort)
+            .Skip((query.Page - 1) * query.PageSize)
+            .Take(query.PageSize)
+            .Select(ProductProjections.ListItem);
 
     private static IQueryable<Product> ApplySort(IQueryable<Product> q, ProductSort sort) => sort switch
     {

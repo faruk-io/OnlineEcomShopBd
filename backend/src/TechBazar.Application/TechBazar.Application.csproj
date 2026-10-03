@@ -6,4 +6,7 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="TechBazar.UnitTests" />
+  </ItemGroup>
 </Project>

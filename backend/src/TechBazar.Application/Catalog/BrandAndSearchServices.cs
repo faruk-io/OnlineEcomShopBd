@@ -18,10 +18,14 @@ public sealed class SearchService(IApplicationDbContext db) : ISearchService
     public async Task<AutocompleteResultDto> AutocompleteAsync(string query, int limit, CancellationToken ct = default)
     {
         var q = query.Trim();
+        var contains = TextSearch.Contains(q);
+        var prefix = TextSearch.StartsWith(q);
 
         var products = await db.Products.AsNoTracking()
-            .Where(p => p.IsActive && (p.Name.Contains(q) || p.Sku.Contains(q) || p.Brand.Name.Contains(q)))
-            .OrderByDescending(p => p.Name.StartsWith(q))
+            .Where(p => p.IsActive && (EF.Functions.Like(p.Name, contains, TextSearch.Escape) ||
+                                       EF.Functions.Like(p.Sku, contains, TextSearch.Escape) ||
+                                       EF.Functions.Like(p.Brand.Name, contains, TextSearch.Escape)))
+            .OrderByDescending(p => EF.Functions.Like(p.Name, prefix, TextSearch.Escape))
             .ThenByDescending(p => p.SoldCount)
             .ThenBy(p => p.Id)
             .Take(limit)
@@ -32,11 +36,11 @@ public sealed class SearchService(IApplicationDbContext db) : ISearchService
             .ToListAsync(ct);
 
         var categories = await db.Categories.AsNoTracking()
-            .Where(c => c.IsActive && c.Name.Contains(q)).OrderBy(c => c.Name).Take(5)
+            .Where(c => c.IsActive && EF.Functions.Like(c.Name, contains, TextSearch.Escape)).OrderBy(c => c.Name).Take(5)
             .Select(c => new CategoryRefDto(c.Id, c.Name, c.Slug)).ToListAsync(ct);
 
         var brands = await db.Brands.AsNoTracking()
-            .Where(b => b.IsActive && b.Name.Contains(q)).OrderBy(b => b.Name).Take(5)
+            .Where(b => b.IsActive && EF.Functions.Like(b.Name, contains, TextSearch.Escape)).OrderBy(b => b.Name).Take(5)
             .Select(b => new BrandDto(b.Id, b.Name, b.Slug, b.LogoUrl)).ToListAsync(ct);
 
         return new AutocompleteResultDto(products, categories, brands);

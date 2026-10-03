@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Mvc.ApplicationModels;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Serilog;
@@ -17,7 +18,11 @@ builder.Host.UseSerilog((ctx, services, cfg) => cfg
     .ReadFrom.Services(services)
     .Enrich.FromLogContext());
 
-builder.Services.AddControllers(o => o.Filters.Add<ValidationFilter>())
+builder.Services.AddControllers(o =>
+    {
+        o.Filters.Add<ValidationFilter>();
+        o.Conventions.Add(new RouteTokenTransformerConvention(new LowercaseRouteTransformer()));
+    })
     .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 
 builder.Services.AddProblemDetails(o => o.CustomizeProblemDetails = ctx =>
