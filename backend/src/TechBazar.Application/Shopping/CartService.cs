@@ -86,6 +86,26 @@ public sealed class CartService(IApplicationDbContext db) : ICartService
         return await BuildAsync(userId, ct);
     }
 
+    public async Task<CartDto> PreviewAsync(IReadOnlyList<CartMergeLine> lines, CancellationToken ct = default)
+    {
+        var wanted = lines.GroupBy(l => l.ProductId).ToDictionary(g => g.Key, g => Math.Min(g.Sum(l => l.Quantity), CartLimits.MaxQuantityPerLine));
+        var ids = wanted.Keys.ToList();
+        var products = await db.Products.AsNoTracking()
+            .Where(p => p.IsActive && ids.Contains(p.Id))
+            .Select(p => new
+            {
+                p.Id, p.Slug, p.Name, p.Sku, p.Price, p.EffectivePrice, p.StockStatus,
+                Image = p.Images.OrderByDescending(x => x.IsPrimary).ThenBy(x => x.DisplayOrder).Select(x => x.Url).FirstOrDefault(),
+            })
+            .ToListAsync(ct);
+
+        // keep the caller's line order
+        var items = ids.Select(id => products.FirstOrDefault(p => p.Id == id)).Where(p => p is not null)
+            .Select(p => new CartItemDto(p!.Id, p.Slug, p.Name, p.Sku, p.Image, p.Price, p.EffectivePrice, wanted[p.Id], p.StockStatus))
+            .ToList();
+        return new CartDto(items);
+    }
+
     private async Task<Cart> GetOrCreateCartAsync(Guid userId, CancellationToken ct)
     {
         var cart = await db.Carts.Include(c => c.Items).FirstOrDefaultAsync(c => c.UserId == userId, ct);

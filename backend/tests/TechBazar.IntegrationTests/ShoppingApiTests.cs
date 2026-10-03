@@ -107,6 +107,22 @@ public class ShoppingApiTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
+    public async Task Cart_Preview_PricesGuestCartAnonymously()
+    {
+        var sale = await ProductAsync("onSale=true&inStock=true");
+        var r = await _client.PostJsonAsync("/api/v1/cart/preview", new
+        {
+            items = new[] { new { productId = sale.Id, quantity = 3 }, new { productId = 999999, quantity = 1 } },
+        });
+        Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+        var cart = await r.ReadAsync<CartDto>();
+        var line = Assert.Single(cart.Items);
+        Assert.Equal(sale.EffectivePrice * 3, cart.Subtotal);
+        Assert.Equal(sale.Price, line.ListPrice);
+        Assert.True(line.Purchasable);
+    }
+
+    [Fact]
     public async Task Carts_AreIsolatedPerUser()
     {
         var (t1, c) = await NewUserAsync();

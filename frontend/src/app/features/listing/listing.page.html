@@ -1,0 +1,130 @@
+@if (notFound()) {
+  <app-not-found heading="Category not found" message="We couldn’t find that category. It may have been renamed or removed." />
+} @else {
+  <div class="container section">
+    <app-breadcrumb [items]="crumbs()" />
+
+    <header class="head">
+      <div>
+        <h1>{{ title() || 'Loading…' }}</h1>
+        @if (mode === 'category' && cat()?.description) { <p class="muted lead">{{ cat()?.description }}</p> }
+      </div>
+      @if (mode === 'category' && cat()?.children?.length) {
+        <nav aria-label="Subcategories">
+          <ul class="pills">
+            @for (c of cat()?.children; track c.id) { <li><a [routerLink]="['/category', c.slug]">{{ c.name }}</a></li> }
+          </ul>
+        </nav>
+      }
+    </header>
+
+    <div class="layout">
+      <!-- Filters: sidebar on desktop, slide-over on mobile -->
+      @if (filtersOpen()) { <div class="overlay" (click)="filtersOpen.set(false)" aria-hidden="true"></div> }
+      <aside id="filters" class="filters" [class.open]="filtersOpen()" aria-label="Product filters">
+        <div class="filters-head">
+          <h2>Filters</h2>
+          <button type="button" class="close" (click)="filtersOpen.set(false)" aria-label="Close filters"><app-icon name="close" [size]="22" /></button>
+        </div>
+
+        <fieldset class="group">
+          <legend>Availability</legend>
+          <label class="check"><input type="checkbox" [checked]="filters().inStock" (change)="apply({ inStock: $any($event.target).checked })" /> <span>In stock only</span></label>
+          <label class="check"><input type="checkbox" [checked]="filters().onSale" (change)="apply({ onSale: $any($event.target).checked })" /> <span>On sale</span></label>
+        </fieldset>
+
+        @if (ceil() > floor()) {
+          <fieldset class="group">
+            <legend>Price (BDT)</legend>
+            <div class="range" [style.--lo.%]="loPct()" [style.--hi.%]="hiPct()">
+              <div class="rail"></div>
+              <input type="range" [min]="floor()" [max]="ceil()" step="500" [value]="lo()" (input)="dragLo(+$any($event.target).value)" (change)="commitPrice()" aria-label="Minimum price" />
+              <input type="range" [min]="floor()" [max]="ceil()" step="500" [value]="hi()" (input)="dragHi(+$any($event.target).value)" (change)="commitPrice()" aria-label="Maximum price" />
+            </div>
+            <div class="price-inputs">
+              <label><span class="visually-hidden">Minimum price</span>
+                <input class="input" type="number" inputmode="numeric" [min]="floor()" [max]="ceil()" step="500" [value]="lo()" (change)="dragLo(+$any($event.target).value); commitPrice()" /></label>
+              <span aria-hidden="true">–</span>
+              <label><span class="visually-hidden">Maximum price</span>
+                <input class="input" type="number" inputmode="numeric" [min]="floor()" [max]="ceil()" step="500" [value]="hi()" (change)="dragHi(+$any($event.target).value); commitPrice()" /></label>
+            </div>
+            <p class="hint" aria-live="polite">{{ bdt(lo()) }} – {{ bdt(hi()) }}</p>
+          </fieldset>
+        }
+
+        @if (fac()?.brands?.length) {
+          <fieldset class="group">
+            <legend>Brand</legend>
+            <div class="scroll">
+              @for (b of fac()?.brands; track b.slug) {
+                <label class="check"><input type="checkbox" [checked]="filters().brands.includes(b.slug)" (change)="toggleBrand(b.slug)" /> <span>{{ b.name }}</span><span class="n">{{ b.count }}</span></label>
+              }
+            </div>
+          </fieldset>
+        }
+
+        @for (s of specFacets(); track s.key; let i = $index) {
+          <details class="group" [open]="specGroupOpen(s.key, i)">
+            <summary>{{ s.key }}</summary>
+            <div class="scroll">
+              @for (v of s.values; track v.value) {
+                <label class="check"><input type="checkbox" [checked]="isSpecChecked(s.key, v.value)" (change)="toggleSpec(s.key, v.value)" /> <span>{{ v.value }}</span><span class="n">{{ v.count }}</span></label>
+              }
+            </div>
+          </details>
+        }
+
+        <div class="filters-foot">
+          <button type="button" class="btn btn-outline btn-block" (click)="clearAll()" [disabled]="!filterCount()">Clear all filters</button>
+          <button type="button" class="btn btn-primary btn-block apply" (click)="filtersOpen.set(false)">Show {{ shown()?.totalCount ?? '' }} results</button>
+        </div>
+      </aside>
+
+      <section class="results" aria-labelledby="results-h" [attr.aria-busy]="products.isLoading()">
+        <h2 id="results-h" class="visually-hidden">Product results</h2>
+        <div class="toolbar">
+          <button type="button" class="btn btn-outline btn-sm filter-btn" (click)="filtersOpen.set(true)" aria-controls="filters" [attr.aria-expanded]="filtersOpen()">
+            <app-icon name="filter" [size]="16" /> Filters @if (filterCount()) { <span class="count-badge">{{ filterCount() }}</span> }
+          </button>
+          <p class="total" aria-live="polite">
+            @if (shown(); as s) { <strong>{{ s.totalCount }}</strong> {{ s.totalCount === 1 ? 'product' : 'products' }} } @else { &nbsp; }
+          </p>
+          <div class="sort">
+            <label for="sort">Sort by</label>
+            <select id="sort" class="select" [value]="filters().sort" (change)="onSort($any($event.target).value)">
+              @for (o of sorts; track o.value) { <option [value]="o.value" [selected]="o.value === filters().sort">{{ o.label }}</option> }
+            </select>
+          </div>
+        </div>
+
+        @if (chips().length) {
+          <ul class="chips" aria-label="Active filters">
+            @for (c of chips(); track c.label) {
+              <li><button type="button" class="chip" (click)="c.remove()" [attr.aria-label]="'Remove filter ' + c.label">{{ c.label }} <app-icon name="close" [size]="12" /></button></li>
+            }
+            <li><button type="button" class="chip-clear" (click)="clearAll()">Clear all</button></li>
+          </ul>
+        }
+
+        @if (products.error() && !shown()) {
+          <div class="alert alert-error" role="alert">We couldn’t load the products. <button type="button" class="btn btn-sm btn-outline" (click)="retry()">Try again</button></div>
+        } @else if (mode === 'search' && filters().q.length < 2) {
+          <div class="empty"><h2>Type at least 2 characters</h2><p>Use the search box above to find products, brands and categories.</p></div>
+        } @else if (!shown()) {
+          <div class="product-grid">@for (s of skeletons; track s) { <div class="skeleton card-skel"></div> }</div>
+        } @else if (shown()!.items.length === 0) {
+          <div class="empty">
+            <h2>No products match</h2>
+            <p>Try removing a filter or searching for something else.</p>
+            @if (filterCount()) { <button type="button" class="btn btn-primary" (click)="clearAll()">Clear all filters</button> }
+          </div>
+        } @else {
+          <div class="product-grid" [class.dim]="products.isLoading()">
+            @for (p of shown()!.items; track p.id; let i = $index) { <app-product-card [p]="p" [eager]="i < 4" /> }
+          </div>
+          <app-pagination [page]="shown()!.page" [totalPages]="shown()!.totalPages" [baseParams]="queryParams()" />
+        }
+      </section>
+    </div>
+  </div>
+}

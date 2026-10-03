@@ -28,6 +28,12 @@ public sealed class CartController(ICartService cart) : ApiControllerBase
     [HttpDelete]
     public async Task<ActionResult<CartDto>> Clear(CancellationToken ct) => Ok(await cart.ClearAsync(UserId, ct));
 
+    /// <summary>Re-prices a guest (localStorage) cart with current prices/stock. Anonymous, nothing is stored.</summary>
+    [HttpPost("preview")]
+    [AllowAnonymous]
+    public async Task<ActionResult<CartDto>> Preview(CartMergeRequest request, CancellationToken ct) =>
+        Ok(await cart.PreviewAsync(request.Items, ct));
+
     /// <summary>Merge a guest (localStorage) cart into the server cart after login.</summary>
     [HttpPost("merge")]
     public async Task<ActionResult<CartDto>> Merge(CartMergeRequest request, CancellationToken ct) =>

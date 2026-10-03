@@ -1,0 +1,53 @@
+<div class="container section">
+  <app-breadcrumb [items]="[{ label: 'Cart' }]" />
+  <h1>Shopping cart @if (cart.count()) { <span class="muted n">({{ cart.count() }} {{ cart.count() === 1 ? 'item' : 'items' }})</span> }</h1>
+
+  @if (cart.lines().length === 0) {
+    <div class="empty panel">
+      <app-icon name="cart" [size]="44" />
+      <h2>Your cart is empty</h2>
+      <p>Add a few things and they’ll show up here.</p>
+      <a class="btn btn-primary" routerLink="/shop">Start shopping</a>
+    </div>
+  } @else {
+    <div class="layout">
+      <section aria-label="Cart items" class="items">
+        <ul class="lines">
+          @for (l of cart.lines(); track l.productId) {
+            <li class="line" [class.gone]="!isPurchasable(l.stockStatus)">
+              <a class="thumb" [routerLink]="['/product', l.slug]" tabindex="-1" aria-hidden="true"><img [src]="l.imageUrl || '/images/placeholder.svg'" alt="" width="88" height="88" loading="lazy" /></a>
+              <div class="main">
+                <a class="name" [routerLink]="['/product', l.slug]">{{ l.name }}</a>
+                <span class="sku muted">SKU: {{ l.sku }}</span>
+                <app-price [regular]="l.listPrice" [current]="l.unitPrice" />
+                @if (!isPurchasable(l.stockStatus)) { <p class="warn" role="alert"><app-stock-badge [status]="l.stockStatus" /> No longer available — it won’t be charged. Please remove it.</p> }
+              </div>
+              <div class="qty"><app-quantity-input [value]="l.quantity" (valueChange)="cart.setQuantity(l.productId, $event)" [label]="l.name" /></div>
+              <div class="total"><span class="visually-hidden">Line total </span>{{ l.unitPrice * l.quantity | bdt }}</div>
+              <button type="button" class="rm" (click)="cart.remove(l.productId)" [attr.aria-label]="'Remove ' + l.name + ' from cart'"><app-icon name="trash" [size]="18" /></button>
+            </li>
+          }
+        </ul>
+        <button type="button" class="btn btn-ghost btn-sm" (click)="cart.clear()">Clear cart</button>
+      </section>
+
+      <aside class="summary panel" aria-labelledby="sum-h">
+        <h2 id="sum-h">Order summary</h2>
+        <dl>
+          <div><dt>Subtotal</dt><dd>{{ cart.subtotal() | bdt }}</dd></div>
+          @if (cart.savings() > 0) { <div class="save"><dt>You save</dt><dd>{{ cart.savings() | bdt }}</dd></div> }
+          <div><dt>Delivery</dt><dd class="muted">Calculated at checkout</dd></div>
+          <div class="grand"><dt>Total</dt><dd>{{ cart.subtotal() | bdt }}</dd></div>
+        </dl>
+        @if (auth.isAuthenticated()) {
+          <button type="button" class="btn btn-primary btn-block" disabled aria-describedby="co-note">Proceed to checkout</button>
+          <p id="co-note" class="hint">Checkout and online payments (bKash, Nagad, cards, cash on delivery) arrive in the next release. Your cart is saved to your account.</p>
+        } @else {
+          <a class="btn btn-primary btn-block" routerLink="/login" [queryParams]="{ returnUrl: '/cart' }">Sign in to checkout</a>
+          <p class="hint">Your cart is stored on this device. When you sign in or register it is merged into your account cart automatically.</p>
+        }
+        <a class="btn btn-outline btn-block" routerLink="/shop">Continue shopping</a>
+      </aside>
+    </div>
+  }
+</div>

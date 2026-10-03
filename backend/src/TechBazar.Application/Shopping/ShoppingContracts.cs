@@ -21,8 +21,9 @@ public sealed record CartItemDto(
 public sealed record CartDto(IReadOnlyList<CartItemDto> Items)
 {
     public int ItemCount => Items.Sum(i => i.Quantity);
-    public decimal Subtotal => Items.Sum(i => i.LineTotal);
-    public decimal Savings => Items.Sum(i => (i.ListPrice - i.UnitPrice) * i.Quantity);
+    /// <summary>Payable total: lines that are no longer purchasable are shown but not charged.</summary>
+    public decimal Subtotal => Items.Where(i => i.Purchasable).Sum(i => i.LineTotal);
+    public decimal Savings => Items.Where(i => i.Purchasable).Sum(i => (i.ListPrice - i.UnitPrice) * i.Quantity);
 }
 
 public sealed record SetCartItemRequest(int Quantity);
@@ -39,6 +40,8 @@ public interface ICartService
     Task<CartDto> ClearAsync(Guid userId, CancellationToken ct = default);
     /// <summary>Adds a guest cart to the server cart (quantities add up, capped; unavailable products are skipped).</summary>
     Task<CartDto> MergeAsync(Guid userId, IReadOnlyList<CartMergeLine> lines, CancellationToken ct = default);
+    /// <summary>Prices a guest cart from the database (current price, stock status) without persisting anything.</summary>
+    Task<CartDto> PreviewAsync(IReadOnlyList<CartMergeLine> lines, CancellationToken ct = default);
 }
 
 public interface IWishlistService

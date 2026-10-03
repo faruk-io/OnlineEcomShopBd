@@ -1,0 +1,121 @@
+@if (notFound()) {
+  <app-not-found heading="Product not found" message="This product may have been removed or the link is incorrect." />
+} @else if (product.error()) {
+  <div class="container section"><div class="alert alert-error" role="alert">We couldn’t load this product. <button type="button" class="btn btn-sm btn-outline" (click)="retry()">Try again</button></div></div>
+} @else if (p(); as p) {
+  <div class="container section">
+    <app-breadcrumb [items]="crumbs()" />
+
+    <article class="product">
+      <!-- Gallery -->
+      <section class="gallery" aria-label="Product images">
+        <div class="stage">
+          @if (image(); as img) { <img [src]="img.url" [alt]="img.altText || p.name" width="640" height="640" fetchpriority="high" /> }
+          @if (p.discountPercent > 0) { <span class="deal">-{{ p.discountPercent }}%</span> }
+        </div>
+        @if (p.images.length > 1) {
+          <ul class="thumbs">
+            @for (img of p.images; track img.url; let i = $index) {
+              <li><button type="button" (click)="activeImage.set(i)" [attr.aria-pressed]="i === activeImage()" [attr.aria-label]="'Show image ' + (i + 1) + ' of ' + p.images.length">
+                <img [src]="img.url" alt="" width="72" height="72" loading="lazy" /></button></li>
+            }
+          </ul>
+        }
+      </section>
+
+      <!-- Buy box -->
+      <section class="info" aria-labelledby="pname">
+        <p class="brandline"><a routerLink="/shop" [queryParams]="{ brand: p.brand.slug }">{{ p.brand.name }}</a><span aria-hidden="true"> · </span><span>SKU: {{ p.sku }}</span></p>
+        <h1 id="pname">{{ p.name }}</h1>
+        <app-rating [value]="p.ratingAverage" [count]="p.reviewCount" />
+
+        <div class="price-box">
+          <app-price [regular]="p.price" [current]="p.effectivePrice" style="--price-size: 1.9rem" />
+          @if (p.savingsAmount > 0) { <p class="save">You save {{ p.savingsAmount | bdt }} ({{ p.discountPercent }}% off)</p> }
+        </div>
+
+        <dl class="facts">
+          <div><dt>Availability</dt><dd><app-stock-badge [status]="p.stockStatus" /></dd></div>
+          <div><dt>Warranty</dt><dd>{{ warranty() }}@if (p.warrantyDetails) { <span class="muted"> — {{ p.warrantyDetails }}</span> }</dd></div>
+          <div><dt>Category</dt><dd><a [routerLink]="['/category', p.category.slug]">{{ p.category.name }}</a></dd></div>
+        </dl>
+
+        @if (p.keyFeatures.length) {
+          <h2 class="kf-title">Key features</h2>
+          <ul class="kf">@for (f of p.keyFeatures; track f) { <li><app-icon name="check" [size]="16" /> {{ f }}</li> }</ul>
+        }
+
+        <div class="buy">
+          <app-quantity-input [(value)]="quantity" [label]="p.name" />
+          <button type="button" class="btn btn-primary" (click)="addToCart()" [disabled]="!purchasable()"><app-icon name="cart" [size]="18" /> Add to cart</button>
+          <button type="button" class="btn btn-accent" (click)="buyNow()" [disabled]="!purchasable()">Buy now</button>
+        </div>
+        @if (!purchasable()) { <p class="muted small">This item can’t be ordered right now. Save it to your wishlist and we’ll keep it here for you.</p> }
+
+        <div class="secondary">
+          <button type="button" class="btn btn-outline btn-sm" (click)="toggleWishlist()" [attr.aria-pressed]="wished()"><app-icon name="heart" [size]="16" /> {{ wished() ? 'In wishlist' : 'Add to wishlist' }}</button>
+          <button type="button" class="btn btn-outline btn-sm" (click)="toggleCompare()" [attr.aria-pressed]="compared()"><app-icon name="compare" [size]="16" /> {{ compared() ? 'Added to compare' : 'Compare' }}</button>
+          @if (compare.count() > 0) { <a class="btn btn-ghost btn-sm" routerLink="/compare">View compare ({{ compare.count() }})</a> }
+        </div>
+      </section>
+    </article>
+
+    <!-- In-page sections (all content stays in the DOM for crawlers and screen readers) -->
+    <nav class="jump" aria-label="Product sections">
+      <a routerLink="." fragment="specification">Specification</a>
+      @if (p.description) { <a routerLink="." fragment="description">Description</a> }
+      <a routerLink="." fragment="reviews">Reviews ({{ p.reviewCount }})</a>
+    </nav>
+
+    <section id="specification" class="panel block" aria-labelledby="spec-h">
+      <h2 id="spec-h">Specification</h2>
+      @for (g of p.specifications; track g.group) {
+        <table class="spec">
+          <caption>{{ g.group }}</caption>
+          <tbody>
+            @for (row of g.items; track row.key) { <tr><th scope="row">{{ row.key }}</th><td>{{ row.value }}</td></tr> }
+          </tbody>
+        </table>
+      }
+    </section>
+
+    @if (p.description) {
+      <section id="description" class="panel block" aria-labelledby="desc-h">
+        <h2 id="desc-h">Description</h2>
+        <p>{{ p.description }}</p>
+      </section>
+    }
+
+    <section id="reviews" class="panel block" aria-labelledby="rev-h">
+      <h2 id="rev-h">Customer reviews</h2>
+      @if (p.reviews.length) {
+        <ul class="reviews">
+          @for (r of p.reviews; track $index) {
+            <li>
+              <app-rating [value]="r.rating" [showCount]="false" />
+              @if (r.title) { <strong>{{ r.title }}</strong> }
+              @if (r.comment) { <p>{{ r.comment }}</p> }
+              <span class="muted small">{{ r.reviewerName }} · {{ r.createdAt | date: 'mediumDate' }}</span>
+            </li>
+          }
+        </ul>
+      } @else {
+        <p class="muted">No reviews yet. Reviews from verified buyers will appear here.</p>
+      }
+    </section>
+
+    @if (related.value().length) {
+      <section class="block" aria-labelledby="rel-h">
+        <div class="section-head"><h2 id="rel-h">Related products</h2></div>
+        <div class="product-grid">@for (r of related.value(); track r.id) { <app-product-card [p]="r" /> }</div>
+      </section>
+    }
+  </div>
+} @else {
+  <div class="container section">
+    <div class="product">
+      <div class="skeleton" style="aspect-ratio: 1"></div>
+      <div><div class="skeleton" style="height: 2rem; margin-bottom: 1rem"></div><div class="skeleton" style="height: 12rem"></div></div>
+    </div>
+  </div>
+}

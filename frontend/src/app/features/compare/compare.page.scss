@@ -1,0 +1,20 @@
+.head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; margin-block: .75rem; }
+.head h1 { margin: 0; }
+.tools { display: flex; align-items: center; gap: 1rem; }
+.check { display: inline-flex; align-items: center; gap: .5rem; cursor: pointer; } .check input { accent-color: var(--primary); width: 1.05rem; height: 1.05rem; }
+.empty { display: grid; justify-items: center; gap: .5rem; padding: 3rem 1rem; text-align: center; color: var(--muted); }
+.scroller { overflow-x: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.cmp { min-width: 44rem; table-layout: fixed; }
+.cmp th, .cmp td { padding: .6rem .8rem; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; font-size: .92rem; word-break: break-word; }
+.cmp thead th { border-bottom: 2px solid var(--border-strong); }
+.cmp tbody th[scope='row'] { width: 11rem; color: var(--muted); font-weight: 500; background: var(--surface-2); position: sticky; left: 0; }
+.corner { width: 11rem; background: var(--surface-2); position: sticky; left: 0; }
+.prod { position: relative; display: table-cell; text-align: center !important; }
+.prod > * { display: block; margin-inline: auto; margin-bottom: .4rem; }
+.prod app-price { display: inline-flex; justify-content: center; } .prod app-stock-badge { display: block; }
+.pname { font-weight: 600; color: var(--text); font-size: .9rem; } .pname:hover { color: var(--primary); }
+.rm { position: absolute; top: .3rem; right: .3rem; width: 1.8rem; height: 1.8rem; display: grid !important; place-items: center; border: 1px solid var(--border); border-radius: 50%; background: var(--surface); cursor: pointer; margin: 0 !important; }
+.rm:hover { color: var(--danger); border-color: var(--danger); }
+.slot { text-align: center !important; color: var(--muted); background: var(--surface-2); font-size: .85rem; }
+.grp th { background: var(--primary-weak); color: var(--primary-strong); font-weight: 700; }
+tr.diff td { background: #fffbeb; font-weight: 600; }

@@ -1,0 +1,63 @@
+<div class="container section">
+  <app-breadcrumb [items]="[{ label: 'Compare' }]" />
+  <div class="head">
+    <h1>Compare products</h1>
+    @if (compare.count() > 0) {
+      <div class="tools">
+        <label class="check"><input type="checkbox" [checked]="diffOnly()" (change)="diffOnly.set($any($event.target).checked)" /> Show differences only</label>
+        <button type="button" class="btn btn-outline btn-sm" (click)="compare.clear()">Clear all</button>
+      </div>
+    }
+  </div>
+
+  @if (compare.count() === 0) {
+    <div class="empty panel">
+      <app-icon name="compare" [size]="40" />
+      <h2>Nothing to compare yet</h2>
+      <p>Use the compare button on any product to add up to {{ max }} products and see their specifications side by side.</p>
+      <a class="btn btn-primary" routerLink="/shop">Browse products</a>
+    </div>
+  } @else if (products.isLoading() && !items().length) {
+    <div class="skeleton" style="height: 24rem"></div>
+  } @else {
+    <p class="muted" aria-live="polite">Comparing {{ items().length }} of {{ max }} products.</p>
+    <div class="scroller" tabindex="0" role="region" aria-label="Product comparison table, scrollable">
+      <table class="cmp">
+        <caption class="visually-hidden">Side-by-side comparison of {{ items().length }} products</caption>
+        <thead>
+          <tr>
+            <th scope="col" class="corner"><span class="visually-hidden">Specification</span></th>
+            @for (p of items(); track p.id) {
+              <th scope="col" class="prod">
+                <button type="button" class="rm" (click)="compare.remove(p.slug)" [attr.aria-label]="'Remove ' + p.name + ' from comparison'"><app-icon name="close" [size]="16" /></button>
+                <a [routerLink]="['/product', p.slug]"><img [src]="p.images[0]?.url || '/images/placeholder.svg'" alt="" width="120" height="120" loading="lazy" /></a>
+                <a class="pname" [routerLink]="['/product', p.slug]">{{ p.name }}</a>
+                <app-price [regular]="p.price" [current]="p.effectivePrice" />
+                <app-stock-badge [status]="p.stockStatus" />
+                <button type="button" class="btn btn-primary btn-sm" (click)="addToCart(p)" [disabled]="!isPurchasable(p.stockStatus)"><app-icon name="cart" [size]="14" /> Add to cart</button>
+              </th>
+            }
+            @for (s of emptySlots(); track $index) { <th class="slot" scope="col"><a routerLink="/shop">+ Add a product</a></th> }
+          </tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">Warranty</th>@for (p of items(); track p.id) { <td>{{ warranty(p.warrantyMonths) }}</td> }@if (emptySlots().length) { <td class="slot" [attr.colspan]="emptySlots().length"></td> }</tr>
+          <tr><th scope="row">Brand</th>@for (p of items(); track p.id) { <td>{{ p.brand.name }}</td> }@if (emptySlots().length) { <td class="slot" [attr.colspan]="emptySlots().length"></td> }</tr>
+        </tbody>
+        @for (g of groups(); track g.group) {
+          <tbody>
+            <tr class="grp"><th [attr.colspan]="max + 1" scope="colgroup">{{ g.group }}</th></tr>
+            @for (r of g.rows; track r.key) {
+              <tr [class.diff]="r.differs">
+                <th scope="row">{{ r.key }}</th>
+                @for (v of r.values; track $index) { <td>{{ v }}</td> }
+                @if (emptySlots().length) { <td class="slot" [attr.colspan]="emptySlots().length"></td> }
+              </tr>
+            }
+          </tbody>
+        }
+      </table>
+    </div>
+    @if (diffOnly() && !groups().length) { <p class="muted">These products have identical specifications.</p> }
+  }
+</div>

@@ -13,16 +13,36 @@ const app = express();
 const angularApp = new AngularNodeAppEngine();
 
 /**
- * Example Express Rest API endpoints can be defined here.
- * Uncomment and define endpoints as necessary.
- *
- * Example:
- * ```ts
- * app.get('/api/{*splat}', (req, res) => {
- *   // Handle API request
- * });
- * ```
+ * Same-origin API gateway. The browser (and the server-side renderer) call a relative `/api/v1/...`;
+ * this forwards it to the .NET API (`API_URL`, default http://localhost:5080). In production you can instead put
+ * both behind one reverse proxy (nginx/IIS/Azure Front Door) and drop this block.
  */
+const API_URL = (process.env['API_URL'] ?? 'http://localhost:5080').replace(/\/$/, '');
+const HOP_BY_HOP = new Set(['connection', 'keep-alive', 'transfer-encoding', 'upgrade', 'host', 'content-length', 'te', 'trailer', 'content-encoding']);
+
+app.use('/api', express.raw({ type: () => true, limit: '1mb' }), async (req, res) => {
+  try {
+    const headers = new Headers();
+    for (const [name, value] of Object.entries(req.headers)) {
+      if (value !== undefined && !HOP_BY_HOP.has(name)) headers.set(name, Array.isArray(value) ? value.join(',') : value);
+    }
+    headers.set('x-forwarded-for', req.socket.remoteAddress ?? 'unknown');
+    const hasBody = !['GET', 'HEAD'].includes(req.method) && Buffer.isBuffer(req.body) && req.body.length > 0;
+    const upstream = await fetch(`${API_URL}${req.originalUrl}`, {
+      method: req.method,
+      headers,
+      body: hasBody ? new Uint8Array(req.body as Buffer) : undefined,
+      redirect: 'manual',
+    });
+    res.status(upstream.status);
+    upstream.headers.forEach((value, name) => {
+      if (!HOP_BY_HOP.has(name)) res.setHeader(name, value);
+    });
+    res.send(Buffer.from(await upstream.arrayBuffer()));
+  } catch {
+    res.status(502).type('application/problem+json').send({ status: 502, title: 'The API is unreachable.' });
+  }
+});
 
 /**
  * Serve static files from /browser

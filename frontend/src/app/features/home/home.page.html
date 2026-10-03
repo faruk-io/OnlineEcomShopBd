@@ -1,0 +1,63 @@
+<div class="container section hero-wrap">
+  <app-hero-slider />
+</div>
+
+<section class="container section" aria-labelledby="h-cats">
+  <div class="section-head"><h2 id="h-cats">Shop by category</h2></div>
+  @if (tree.isLoading() && !featured().length) {
+    <div class="cat-grid">@for (s of [1,2,3,4,5,6]; track s) { <div class="skeleton cat-skel"></div> }</div>
+  } @else {
+    <ul class="cat-grid">
+      @for (c of featured(); track c.id) {
+        <li>
+          <a class="cat" [routerLink]="['/category', c.slug]">
+            <img [src]="c.imageUrl || '/images/placeholder.svg'" alt="" width="96" height="96" loading="lazy" />
+            <span class="name">{{ c.name }}</span>
+            <span class="count">{{ c.productCount }} products</span>
+          </a>
+        </li>
+      }
+    </ul>
+  }
+</section>
+
+<section class="container section" aria-labelledby="h-deals">
+  <div class="section-head">
+    <h2 id="h-deals"><app-icon name="tag" [size]="22" /> Hot deals</h2>
+    <a routerLink="/shop" [queryParams]="{ onSale: true }">View all offers</a>
+  </div>
+  <div class="product-grid">
+    @if (deals.isLoading() && !deals.value().items.length) {
+      @for (s of skeletons; track s) { <div class="skeleton card-skel"></div> }
+    } @else {
+      @for (p of deals.value().items; track p.id; let i = $index) { <app-product-card [p]="p" [eager]="i < 4" /> }
+    }
+  </div>
+</section>
+
+<section class="container section" aria-labelledby="h-new">
+  <div class="section-head">
+    <h2 id="h-new">New arrivals</h2>
+    <a routerLink="/shop" [queryParams]="{ sort: 'newest' }">View all</a>
+  </div>
+  <div class="product-grid">
+    @if (newest.isLoading() && !newest.value().items.length) {
+      @for (s of skeletons; track s) { <div class="skeleton card-skel"></div> }
+    } @else {
+      @for (p of newest.value().items; track p.id) { <app-product-card [p]="p" /> }
+    }
+  </div>
+</section>
+
+@if (brands.value().length) {
+  <section class="container section" aria-labelledby="h-brands">
+    <div class="section-head"><h2 id="h-brands">Popular brands</h2></div>
+    <ul class="brand-row">
+      @for (b of brands.value(); track b.id) {
+        <li><a [routerLink]="['/shop']" [queryParams]="{ brand: b.slug }" [attr.aria-label]="b.name + ' (' + b.productCount + ' products)'">
+          <img [src]="b.logoUrl || '/images/placeholder.svg'" [alt]="b.name" width="160" height="56" loading="lazy" />
+        </a></li>
+      }
+    </ul>
+  </section>
+}

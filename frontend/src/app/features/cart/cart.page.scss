@@ -1,0 +1,16 @@
+.n { font-size: 1rem; font-weight: 400; }
+.empty { display: grid; justify-items: center; gap: .5rem; padding: 3rem 1rem; text-align: center; color: var(--muted); }
+.layout { display: grid; gap: 1.25rem; margin-top: 1rem; }
+.lines { list-style: none; margin: 0 0 .75rem; padding: 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.line { display: grid; grid-template-columns: 5.5rem 1fr auto; grid-template-areas: 'thumb main rm' 'thumb qty total'; gap: .5rem .9rem; padding: .9rem; border-bottom: 1px solid var(--border); align-items: center; }
+.line:last-child { border-bottom: 0; } .line.gone { background: var(--warn-bg); }
+.thumb { grid-area: thumb; background: var(--surface-2); border-radius: var(--radius); display: block; } .thumb img { width: 100%; height: auto; display: block; }
+.main { grid-area: main; display: grid; gap: .15rem; min-width: 0; } .qty { grid-area: qty; } .total { grid-area: total; font-weight: 700; text-align: right; } .rm { grid-area: rm; }
+.name { font-weight: 600; color: var(--text); } .name:hover { color: var(--primary); } .sku { font-size: .78rem; }
+.rm { width: 2.2rem; height: 2.2rem; display: grid; place-items: center; background: none; border: 0; border-radius: 50%; color: var(--muted); cursor: pointer; } .rm:hover { color: var(--danger); background: var(--danger-bg); }
+.warn { font-size: .82rem; margin: .3rem 0 0; display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
+.summary { align-self: start; display: grid; gap: .75rem; } .summary h2 { margin: 0; }
+dl { margin: 0; display: grid; gap: .5rem; } dl div { display: flex; justify-content: space-between; gap: 1rem; } dt { color: var(--muted); } dd { margin: 0; font-weight: 600; }
+.save dd { color: var(--success); } .grand { border-top: 1px solid var(--border); padding-top: .6rem; font-size: 1.15rem; } .grand dt { color: var(--ink); font-weight: 700; } .grand dd { color: var(--price); }
+@media (min-width: 640px) { .line { grid-template-columns: 6rem 1fr auto auto auto; grid-template-areas: 'thumb main qty total rm'; } }
+@media (min-width: 960px) { .layout { grid-template-columns: 1fr 22rem; } .summary { position: sticky; top: calc(var(--header-h) + 3.5rem); } }

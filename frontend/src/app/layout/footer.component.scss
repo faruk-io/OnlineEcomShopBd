@@ -1,0 +1,13 @@
+.footer { margin-top: 3rem; background: var(--ink); color: #cbd5e1; }
+.perks { display: grid; gap: 1rem; grid-template-columns: 1fr; padding-block: 1.5rem; border-bottom: 1px solid #1e293b; }
+.perks > div { display: flex; gap: 0.75rem; align-items: center; color: var(--accent); }
+.perks strong { display: block; color: #fff; } .perks span { font-size: 0.85rem; color: #94a3b8; }
+.cols { display: grid; gap: 1.5rem; grid-template-columns: 1fr; padding-block: 2rem; }
+h2 { color: #fff; font-size: 1rem; margin-bottom: 0.75rem; }
+ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.4rem; }
+a { color: #cbd5e1; } a:hover { color: #fff; }
+.contact { font-size: 0.9rem; }
+.pay { display: flex; flex-wrap: wrap; gap: 0.5rem; } .pay li { border: 1px solid #334155; border-radius: 6px; padding: 0.2rem 0.6rem; font-size: 0.85rem; }
+.legal { border-top: 1px solid #1e293b; padding-block: 1rem; font-size: 0.82rem; color: #94a3b8; }
+@media (min-width: 640px) { .perks { grid-template-columns: repeat(2, 1fr); } .cols { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 960px) { .perks { grid-template-columns: repeat(4, 1fr); } .cols { grid-template-columns: 2fr 1fr 1fr 1fr; } }
