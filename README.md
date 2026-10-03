@@ -6,7 +6,7 @@ large local retailers).
 | Part | Tech | Folder |
 |------|------|--------|
 | API | ASP.NET Core Web API, .NET 9, EF Core 9, SQL Server, Identity + JWT | [`backend/`](backend) |
-| Web | Angular 22 (standalone, signals, SSR) — scaffold only so far | [`frontend/`](frontend) |
+| Web | Angular 22 storefront (standalone, signals, SSR) | [`frontend/`](frontend) |
 | Docs | Architecture notes, ERD | [`docs/`](docs) |
 
 See [`CLAUDE.md`](CLAUDE.md) for conventions and commands, and [`docs/`](docs) for the ERD and architecture.
@@ -29,11 +29,20 @@ dotnet run --project src/TechBazar.Api          # Swagger: https://localhost:708
 Connect SSMS to the same server, database **TechBazarBD**. Tables: `Products`, `Categories`, `ProductSpecifications`,
 `Users`, `Roles`, `RefreshTokens`, ...
 
+## Run the storefront
+Needs Node ≥ 22.22.3 and the API running on http://localhost:5080 (`dotnet run --project src/TechBazar.Api` uses
+`applicationUrl` 5080 for http).
+```bash
+cd frontend && npm install
+npm start                                   # http://localhost:4200  (dev server, /api proxied to :5080)
+# or the production/SSR build
+npm run build && API_URL=http://localhost:5080 npm run serve:ssr:techbazar-web   # http://localhost:4000
+```
+Seeded admin/customer accounts are not required to browse; register a customer on `/register`.
+
 ## Tests
 ```bash
-cd backend && dotnet test      # 96 unit + 39 integration (SQLite in-memory for tests only)
+cd backend  && dotnet test                  # 96 unit + 48 integration (SQLite in-memory for tests only)
+cd frontend && npm test -- --watch=false    # 187 Vitest specs
 ```
-## Frontend
-```bash
-cd frontend && npm install && npm start     # http://localhost:4200
-```
+Screenshots of the storefront: [`docs/screenshots/`](docs/screenshots). Design notes: [`docs/frontend.md`](docs/frontend.md).
