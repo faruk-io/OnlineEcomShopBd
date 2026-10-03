@@ -37,6 +37,18 @@ public sealed class GlobalExceptionHandler(
             case ConflictException:
                 problem = Create(StatusCodes.Status409Conflict, "Conflict.", exception.Message);
                 break;
+            case InvalidTokenException:
+                // deliberately the same answer for unknown / expired / used / wrong-purpose links
+                problem = Create(StatusCodes.Status400BadRequest, "Invalid or expired link.", "This link is invalid or has expired. Please request a new one.");
+                break;
+            case EmailNotVerifiedException:
+                problem = Create(StatusCodes.Status403Forbidden, "Email not verified.", "Please verify your email address to continue. Check your inbox or request a new link.");
+                problem.Extensions["code"] = "email_not_verified";   // lets the UI show the right prompt without parsing text
+                break;
+            case ForbiddenException fe:
+                problem = Create(StatusCodes.Status403Forbidden, "Forbidden.", fe.Message);
+                problem.Extensions["code"] = fe.Code;
+                break;
             case AuthenticationFailedException:
                 problem = Create(StatusCodes.Status401Unauthorized, "Authentication failed.", exception.Message);
                 break;

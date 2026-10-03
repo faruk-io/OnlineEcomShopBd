@@ -3,6 +3,7 @@
     <ProjectReference Include="..\TechBazar.Application\TechBazar.Application.csproj" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="MailKit" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" />

@@ -208,9 +208,12 @@ public class CatalogApiTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
-    public async Task Swagger_PublishesDocumentWithBearerScheme()
+    public async Task Swagger_WhenExplicitlyEnabled_PublishesDocumentWithBearerScheme()
     {
-        var r = await _client.GetAsync("/swagger/v1/swagger.json");
+        // Swagger is off outside Development unless Swagger:Enabled=true (see SecurityApiTests for the default-off check).
+        using var f = ApiFactory.WithConfig(("Swagger:Enabled", "true"));
+        using var c = f.CreateClient();
+        var r = await c.GetAsync("/swagger/v1/swagger.json");
         Assert.Equal(HttpStatusCode.OK, r.StatusCode);
         using var doc = JsonDocument.Parse(await r.Content.ReadAsStringAsync());
         Assert.Equal("bearer", doc.RootElement.GetProperty("components").GetProperty("securitySchemes").GetProperty("Bearer").GetProperty("scheme").GetString());
@@ -220,10 +223,11 @@ public class CatalogApiTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
-    public async Task UnknownRoute_Returns404Problem()
+    public async Task UnknownRoute_IsDeniedAsAProblem_WithoutRevealingWhichRoutesExist()
     {
+        // Deny-by-default: anonymous callers get 401 for unknown AND for protected routes alike (no route enumeration).
         var r = await _client.GetAsync("/api/v1/nothing-here");
-        Assert.Equal(HttpStatusCode.NotFound, r.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, r.StatusCode);
         using var _ = await r.ProblemAsync();
     }
 }

@@ -1,7 +1,7 @@
 using System.Net;
 using System.Text;
-using TechBazar.Application.Orders;
 using TechBazar.Application.Common;
+using TechBazar.Application.Orders;
 using TechBazar.Domain.Enums;
 
 namespace TechBazar.Application.Email;

@@ -12,6 +12,8 @@ public class RefreshToken
     public DateTime? RevokedAt { get; set; }
     public string? ReplacedByTokenHash { get; set; }
     public string? RevokedReason { get; set; }
+    /// <summary>The session behind this token passed a second factor; rotated tokens inherit it so a refresh never silently downgrades (or upgrades) a session.</summary>
+    public bool MfaVerified { get; set; }
 
     public bool IsRevoked => RevokedAt.HasValue;
     public bool IsExpired(DateTime utcNow) => utcNow >= ExpiresAt;

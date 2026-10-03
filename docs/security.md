@@ -1,0 +1,131 @@
+# Security review (Phase 4)
+
+Scope: the whole repository (API, SSR server, Angular app, Docker/CI). Method: read every controller, service and pipeline stage;
+enumerate endpoints by reflection; scan tree **and git history** for secrets; run `dotnet list package --vulnerable` and `npm audit`;
+write regression tests for each finding (so a fix cannot silently regress). Mapped to the OWASP Top 10 (2021).
+
+## Findings and fixes
+
+| # | Sev. | OWASP | Finding | Fix | Proof |
+|---|------|-------|---------|-----|-------|
+| S1 | High | A02/A07 | **Refresh token in `localStorage`**: any XSS = persistent account takeover | Refresh token is now an `HttpOnly; SameSite=Strict; Path=/api/v1/auth` cookie (`Secure` when HTTPS / `Auth:RefreshCookie:Secure=Always`). The cookie is honoured only together with a custom `X-Refresh-Mode` header (forces a CORS pre-flight, so cross-site forgery is impossible). The body carries `refreshToken: null`. Legacy tokens in `localStorage` are exchanged once, then deleted. API clients can still use body mode | `SecurityApiTests` (cookie flags, rotation, replay, CSRF-without-header), `auth.service.spec`, E2E `security.spec` (JS cannot see it, survives reload, logout) |
+| S2 | High | A01 | **No deny-by-default**: public catalog controllers were public only because nothing said otherwise; a new controller without `[Authorize]` would ship open | `FallbackPolicy = RequireAuthenticatedUser`; public endpoints say `[AllowAnonymous]` | `SecurityApiTests`: every endpoint declares access; the **anonymous allow-list is frozen** (adding a public endpoint fails the test until reviewed); every non-public endpoint returns 401 anonymously and every admin endpoint 403 for a customer |
+| S3 | High | A04/A05 | **Per-IP rate limits useless behind the SSR proxy**: all visitors share the proxy's address (auth limit = 10 logins/min *site-wide*), and naive "trust forwarded headers" lets clients spoof their IP | `ForwardedHeaders:KnownProxies` / `KnownNetworks` (CIDR) config; SSR server **appends** to `X-Forwarded-For` (never overwrites); startup warning in Production when unset. **My first version cleared the default trust list, and an empty list means "trust everyone"** - caught by my own test, fixed to keep the loopback default | `ForwardedHeadersTests` (5): trusted chain yields the real visitor, spoofed leading entry ignored, untrusted peer cannot set address/scheme, nothing configured trusts nobody |
+| S4 | Med | A07 | **Logout needed a valid access token**: after the 15 min token expired, logout silently left the (rotated) refresh token alive | `POST /auth/logout` revokes by possession of the refresh token (body or cookie), always 204; new `POST /auth/logout-all` + "Sign out on all devices" in the account menu | `AuthApiTests`, `SecurityApiTests`, E2E (stolen cookie value is rejected after logout; second device is signed out) |
+| S5 | Med | A05 | **Swagger served in every environment** (full route/DTO map) | Development only, or `Swagger:Enabled=true` | `SecurityApiTests.UnknownAndSensitivePaths…` |
+| S6 | Med | A05 | **No security headers** on API or SSR HTML; `X-Powered-By: Express` | API: nosniff, X-Frame-Options, Referrer-Policy, Permissions-Policy, CORP/COOP, `default-src 'none'` CSP, `Cache-Control: no-store` for tokens/private data. SSR: same plus a **hash-based CSP** computed from the rendered page's inline scripts (no `unsafe-inline`/`unsafe-eval` for scripts), HSTS opt-in (`HSTS=1`), `X-Powered-By` removed | unit specs for the CSP builder; E2E in real Chromium: app runs with zero violations **and injected inline script / inline handler / `javascript:` URL are blocked** |
+| S7 | Med | A04 | **No global rate limit; coupon brute force** through the authenticated quote endpoint | Global per-client limiter (600/min) + `checkout` policy (30/min per user). Test exposed that `UseRateLimiter` ran *before* authentication, so "per user" collapsed to per IP: moved after `UseAuthentication` | `SecurityApiTests` (global 429 + `Retry-After`; second customer unaffected) |
+| S8 | Med | A09 | **PII in logs**: the log-only email sender (the active sender in production) wrote full emails (name, phone, address, order) to console and 14-day log files | Information: masked recipient, subject, length. Body only at Debug | `EmailLoggingTests` |
+| S9 | Low | A02 | JWT algorithm not pinned | `ValidAlgorithms = HS256`, `RequireSignedTokens`, `RequireExpirationTime` | tests: HS512/HS384 signed with the *right* key rejected, `alg:none`, wrong key/issuer/audience/expired |
+| S10 | Low | A07 | Login timing revealed unknown/disabled accounts (no password hash computed) | dummy hash on those paths | review + generic-message test |
+| S11 | Low | A09 | SSLCommerz validation call has `store_passwd` in its URL (their API design); default HttpClient logging could record it | `RemoveAllLoggers()` on that client | review |
+| S12 | Low | A05 | Kestrel `Server` header, 30 MB default body, no header timeout | `AddServerHeader=false`, 2 MB body (image upload endpoint 5 MB), 15 s header timeout | `SecurityApiTests` headers |
+| S13 | Low | A05/A10 | SSR `/uploads` proxy forwarded `..` paths (reach other API routes); `/api` proxy folded multiple `Set-Cookie`, had no upstream timeout, and its 1 MB limit **rejected admin image uploads > 1 MB** (functional bug) | strict path allow-list, GET/HEAD only; `getSetCookie()`; 30 s timeout; 6 MB limit for the upload route only | `server-security.spec` (path/limit/XFF helpers), E2E |
+| S14 | Low | A05 | Uploaded files served without a restrictive CSP | `Content-Security-Policy: default-src 'none'; sandbox` + CORP on `/uploads` | `AdminApiTests` upload |
+| S15 | Info | A02 | Compression of token-bearing responses (BREACH class) | auth endpoints excluded from API and SSR compression | `ResponseSizeTests`, `SecurityApiTests` |
+| S16 | Info | A05 | `.gitignore` lacked key/cert patterns | `*.pfx *.p12 *.pem *.key *.crt secrets.json` | `git check-ignore` |
+
+## Phase 5: password reset and email verification
+
+Email is the root of trust for recovery, so the design assumes an attacker who can request resets for anyone and who may read server logs,
+the database, or a mail scanner's traffic.
+
+| Threat | Control | Proof |
+|---|---|---|
+| Guessing / brute-forcing a link | 256-bit random token (43 chars base64url), 1 h reset / 24 h verify lifetime | `AccountServiceTests` (expiry boundary, garbage tokens x8) |
+| Database or backup leak yields working links | only the SHA-256 is stored; the raw token exists in the email and the user's browser only | `OnlyTheHashOfATokenIsStored…` |
+| Replay / double use, concurrent use | single use through an atomic `UPDATE … WHERE UsedAt IS NULL AND ExpiresAt > now`; a newer request supersedes older links | `ATokenWorksExactlyOnce`, `ANewRequestSupersedesTheOlderLink` |
+| A verify link used to reset a password (or vice versa) | tokens are bound to a purpose | `ATokenIsBoundToItsPurpose…` (+ API test); mutation check: removing the check fails 2 tests |
+| Link outlives a change of address / deactivation | token stores the normalised email it was issued for; user must still be active | `ALinkDiesIf…` x2 |
+| **Host-header poisoning** (link points at the attacker's site) | links come from `Account:StorefrontBaseUrl` (or `Payments:StorefrontBaseUrl`), never from the request | `ResetLinks_AreBuiltFromConfiguration_NotFromTheHostHeader` (spoofed `Host`, `X-Forwarded-Host`, `Origin`, `Referer`) |
+| Token leaking via logs, proxies, `Referer`, analytics | token is in the URL **fragment** (never sent to servers); the page keeps it in memory only and strips it from the address bar; it is sent in a POST body | E2E asserts the fragment is gone; unit: no log line contains a token, address or password |
+| Link prefetchers / mail scanners spending the token | verification and reset are `POST`; a `GET` does nothing | `VerificationMustBeAPost…` |
+| **Account enumeration** | forgot-password always answers `202` with identical body and headers **and does identical work**: it only validates and enqueues, a background worker does the lookup/token/mail. Measured before the change: known address 15.2 ms vs unknown 5.2 ms (≈3x, a usable timing side channel); after: 2.73 vs 2.24 ms (0.5 ms, noise) | `ForgotPassword_AnswersIdentically…`; `…OnlyEnqueues…` asserts 0 SQL commands and no inline mail on the request path |
+| Inbox flooding / probing at scale | per-client `recovery` limit (5 / 15 min) + per-account cap (3 / hour, silently ignored beyond) + global limiter | `ForgotPassword_IsRateLimitedPerClient`, `ResetRequests_AreCappedPerAccountPerHour…` |
+| Weak password burning the link | the new password is validated **before** the token is spent | `AWeakPasswordIsRejectedWithoutSpendingTheToken` (unit + API) |
+| Stolen session survives a reset | reset revokes every refresh token, rotates the security stamp, clears lockout and the cookie; no auto-login | `ResetPassword_FullJourney_EndsEverySession…`, E2E second browser is signed out |
+| Silent takeover | "your password was changed" notice to the address | `Reset_SendsAPasswordChangedNotice` |
+| Credentials on the wire to the mail server | SMTP options refuse a username without TLS (fails at startup); recipient must be exactly one mailbox (no header injection); delivery errors never log the address or the server's reply | `SmtpEmailSenderTests` (real SMTP conversation against a fake server) |
+| Mail outage leaks info or breaks the flow | sender never throws into the request; indistinguishable from success | `AFailingMailServerNeverBreaksTheRequest…` |
+
+Bugs found by the tests while building this (all fixed): MimeKit accepts a bare `not-an-address` as a mailbox (strict shape check added);
+`BoundedChannelFullMode.DropWrite` makes `TryWrite` return `true` even when it drops the item (overflow was undetectable; now `Wait`);
+the first timing measurement above.
+
+Operational requirements: set `Email__Smtp__Host/FromAddress` (+ `Username`/`Password` as secrets) in production, otherwise mail is only logged
+(the API warns at startup); set `Account__StorefrontBaseUrl`; `Account__RequireVerifiedEmailForCheckout=true` makes verification mandatory to order
+(default off, so existing flows are unchanged). Reset links are single-use and expire; users can always request a new one.
+
+## Phase 6: two-step verification (TOTP), mandatory for administrators
+
+Threat model: the attacker already knows (or phished/stuffed) a password, and may hold a database dump. A second factor must survive both, and
+must not become a new way to lock people out or to enumerate accounts.
+
+Design: RFC 6238 TOTP (own implementation, HMAC-SHA1, 6 digits, 30 s) so any authenticator app works; recovery codes; a session claim
+(`amr: pwd` / `amr: pwd, mfa`, RFC 8176) that the `AdminOnly` policy checks. Enforcement is `Mfa:EnforceForAdmins` (default **true**); every
+other account can opt in.
+
+| Threat | Control | Proof |
+|---|---|---|
+| Correct password alone opens an admin session | login with MFA answers **202** + single-use challenge, never a token/cookie; `AdminOnly` additionally requires `amr: mfa`, so an admin who never enrolled gets 403 `code: mfa_required` on `/api/v1/admin/*` | `Login_WithMfa_Answers202…`, `AnAdminWithoutASecondFactor…`, `AnAdminCanStillReachTheEnrolmentEndpoints…`; mutation: dropping the requirement fails 2 tests |
+| Forged `amr` claim | claims are inside the signed JWT (HS256 pinned) | `ATokenWithAForgedMfaClaimIsRejected…` |
+| Challenge used as a bearer token / for another purpose | challenge is an `AccountToken` of purpose `MfaChallenge` (256-bit, SHA-256 at rest, 5 min, bound to the account email); it is not a JWT | `TheChallengeTokenIsNotABearerToken`, `OnlyAnMfaChallengeWorks…`, `AChallengeDiesWhenTheAccountEmailChanges`, `AnExpiredChallengeIsRefused…` |
+| Challenge redeemed twice / concurrently | atomic `UPDATE … WHERE UsedAt IS NULL` | `AChallengeCompletesExactlyOneLogin`, `TwoSimultaneousRedemptions…` (race: kills the mutant in ~2 of 3 runs, inherently probabilistic) |
+| Code guessing (10^6 space) | every wrong code calls Identity `AccessFailed` (5 failures = 15 min lockout, shared with passwords) and **a correct password does not reset the counter** (only a completed second factor does); `auth` rate limit per IP on top | `WrongCodesFeedTheLockout_AndACorrectPasswordDoesNotResetIt`, `ASuccessfulSecondFactorResetsTheFailureCounter`; mutations (count removed / reset added) each fail 1 test |
+| Shoulder-surfed / intercepted code replayed inside its 90 s window | `LastUsedStep` bumped atomically (`UPDATE … WHERE LastUsedStep < @step`): a step is accepted once; the code used to enable cannot log in | `ACodeWorksOnce…`, `TheCodeUsedToEnableCannotImmediatelyLogYouIn`; mutation: removing it fails 2 tests |
+| Clock-skew abuse | window is exactly steps -1..+1; every candidate is compared in constant time with no early exit | unit `Verify_AcceptsThePreviousCurrentAndNextStep_ButNothingFurther`, API `ACodeFromTwoStepsAgoIsRejected…` |
+| TOTP implementation bugs | verified against RFC 4226 (10 vectors) and RFC 6238 (6 vectors), Base32 against RFC 4648 | `TotpTests`, `Base32Tests` |
+| Database / backup leak yields authenticator secrets or recovery codes | secrets are AES-256-GCM encrypted with a key that is **not** in the database (`Mfa:SecretKey`, HKDF sub-keys), the user id is authenticated data (a ciphertext copied to another row fails), recovery codes are stored as HMAC-SHA256 (keyed, user-bound; a bare hash would be brute-forceable at 50 bits) | `MfaCryptoTests` (bit-flip at every byte, other user, other key), `TheDatabaseNeverHoldsTheSecretOrARecoveryCodeInTheClear` |
+| Recovery code reuse / theft | single use through an atomic update, 50 bits each, shown once, regenerating replaces all of them and needs a *current authenticator code*; use of one emails the owner | `ARecoveryCodeSignsYouIn_Once…`, `RegeneratingNeedsACurrentCode…`; mutation (reusable) fails 3 tests |
+| Stolen session removes the second factor | disabling needs **password and a code**, feeds the lockout, ends every session, and is refused outright for roles that must use MFA (403 `mfa_required_for_role`) | `Disable_NeedsThePasswordAndACode…`, `AdministratorsCannotTurnMfaOff`; mutation fails 1 test |
+| Sessions that pre-date enrolment survive it | enabling revokes every refresh token and returns a fresh MFA-verified session | `Enable_ReturnsTenWellFormedRecoveryCodes_AStrongSession_AndEndsTheOlderSessions`; mutation fails 1 test |
+| Refresh silently upgrades/downgrades a session | `RefreshToken.MfaVerified` is copied on rotation | `RefreshKeepsTheSessionStrength…`; mutation (always true) fails 1 test |
+| Setup secret cached / logged | `Cache-Control: no-store` on setup/enable/recovery responses; no secret, code or recovery code is logged (only user ids) | `Setup_ReturnsTheSecret…NotCached…` |
+| Account enumeration through the MFA step | the challenge is only reachable after a **correct** password; unknown users and wrong passwords get the same 401 as before | `Login_WithAWrongPassword_NeverReachesTheChallenge` |
+| Silent takeover | enable / disable / regenerate / recovery-code sign-in each email the owner | `ARecoveryCodeSignsYouIn_Once_AndTheOwnerIsToldAboutIt`, `Disable_…` |
+
+Operational requirements
+- **`Mfa__SecretKey`** (base64, >= 32 bytes: `openssl rand -base64 32`) is **required outside Development** (the API refuses to start without it);
+  Development derives a throw-away key from `Jwt:Key`. Keep it in a secret store, separate from the database backups. **There is no key rotation yet:**
+  changing it makes every stored secret undecryptable (logged as an error; those users fail the second factor) until each is reset with the CLI below.
+- **Bootstrap:** until an admin has enrolled, anyone who knows the admin password can enrol *their own* authenticator on it (the enrolment
+  endpoints only need a session). Enrol the seeded admin immediately after first start (before the site is public), and use a strong,
+  secret-store-supplied `Seed__AdminPassword`.
+- **Lost phone *and* recovery codes:** `dotnet run --project src/TechBazar.Api -- mfa-reset <email>` (operator with access to the server config)
+  removes the factor and ends all sessions; the admin then signs in with the password and enrols again. No self-service path exists on purpose.
+- `Mfa__EnforceForAdmins=false` exists for emergencies and tests only.
+
+Not covered (be aware): TOTP is phishable in real time (a look-alike site can relay the code; WebAuthn/passkeys would fix that), there is no
+"remember this device", no step-up re-authentication for sensitive admin actions, and access tokens already issued stay valid for up to 15 minutes
+after MFA is disabled or reset (same trade-off as logout).
+
+## Checked and found sound (with evidence)
+- **SQL injection (A03)**: zero raw SQL (`FromSql*`/`ExecuteSql*` grep); EF parameterises everything; `LIKE` input is escaped (`TextSearch.Escape`, `%`/`_`/`[` tested). 14 hostile payloads (`'; DROP TABLE…`, `' OR '1'='1`, `WAITFOR`, `%`, `[a-z]`, 5 000 chars, …) x 10 endpoints never return 5xx or change data (`HostileInputNeverCausesServerErrors_OrChangesData`).
+- **XSS (A03)**: no `innerHTML`/`bypassSecurityTrust*`/`document.write` in the app (grep); JSON-LD escapes `<`; email HTML is encoded; Angular templates escape by default; CSP above is the backstop.
+- **Secrets (A02/A05)**: no credentials in tree or in git history (pattern scan + file-name history scan); secrets only via user-secrets / env; compose requires `${VAR:?}`.
+- **Components (A06)**: `dotnet list package --vulnerable --include-transitive`: none. `npm audit`: 0. CI fails on either.
+- **Broken access control (A01)**: users cannot read/modify others' addresses, orders, carts (IDOR tests incl. ordering with someone else's address id); admin endpoints all `AdminOnly`.
+- **Input validation (A03/A04)**: validators on every request type, collection caps (cart 50 lines, 24 build parts, 20 spec / 30 brand filters), page sizes clamped, malformed/oversized/wrong-content-type bodies are 4xx.
+- **Auth (A07)**: PBKDF2 hashing, password policy, lockout after 5 failures, refresh tokens 512-bit random, SHA-256 at rest, atomic rotation, **reuse of a rotated token revokes every session**, generic login errors.
+- **Payments**: callbacks verified (signature + validation API), amount/currency checked against the server total, idempotent, never trust browser redirects (Phase 3 tests).
+- **Error handling (A05)**: RFC 7807 everywhere; 500s never include exception text outside Development.
+
+## Accepted risks / not done (be aware)
+- Access tokens stay valid until they expire (15 min) after logout / deactivation: no per-request user lookup (would add a DB hit per call).
+- XSS cannot *steal* the refresh cookie, but script running in the page can still call `/auth/refresh` and act as the user while the page is open. The CSP is the control for that.
+- `style-src 'unsafe-inline'` (Angular component styles). Styles cannot execute script.
+- MFA is TOTP only and mandatory for admins (Phase 6, above). Registration reveals whether an email exists (409); a locked account says so. Email is the root of trust for recovery: whoever controls the mailbox controls the account (standard for e-commerce; customers can opt in to MFA, admins must).
+- A reset link that was already used shows the password form first and only reports "invalid or expired" after submit (the page cannot know without a token-validity oracle; the token is 256-bit so one could be added safely, but it is not needed).
+- Pending "forgot password" jobs live in memory and are lost on shutdown (the user just asks again).
+- `AllowedHosts` is `*` (the API builds no URLs from the Host header; the SSR server enforces `allowedHosts`).
+- Admin edits (products, coupons) are not audit-logged; only order status changes keep who/when.
+- Search is `LIKE '%term%'` (index-unfriendly). Fine to ~100k products; use SQL Server full-text search beyond that.
+- Uploaded images are served as uploaded (up to 5 MB). Put a CDN / image resizer in front before launch.
+- Not executed in this sandbox: Docker builds (no daemon), GitHub Actions, SQL Server (translation is compiled in unit tests), SSLCommerz sandbox.
+
+## Production checklist
+1. `Jwt__Key` (>= 32 random chars), `Mfa__SecretKey` (`openssl rand -base64 32`), DB password, `Seed__AdminPassword` from a secret store; seeding off (`Seed__Enabled=false`). Enrol the admin's authenticator before going public.
+2. TLS terminates at your proxy: set `Auth__RefreshCookie__Secure=Always`, `HSTS=1` on the web container, `Security__HttpsRedirection=false` on the API.
+3. `ForwardedHeaders__KnownNetworks__0=<proxy/CIDR>` (or `KnownProxies`) on the API; watch for the startup warning.
+4. `Cors__AllowedOrigins`, `Payments__PublicApiBaseUrl`, `Payments__StorefrontBaseUrl`, `NG_ALLOWED_HOSTS` set to the real domains.
+5. Keep `Swagger__Enabled` unset. Review Serilog sinks/retention. Back up the SQL Server volume.

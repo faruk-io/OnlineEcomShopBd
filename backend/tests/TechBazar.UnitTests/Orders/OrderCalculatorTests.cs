@@ -143,15 +143,15 @@ public class OrderCalculatorTests
     public void GrandTotal_Identity_HoldsForManyCombinations()
     {
         foreach (var qty in new[] { 1, 3, 10 })
-        foreach (var price in new[] { 99.99m, 1250m, 78500m })
-        foreach (var fee in new[] { 0m, 70m, 130m })
-        foreach (var c in new[] { null, Coupon(value: 7), Coupon(DiscountType.FixedAmount, 750), Coupon(value: 25, max: 300) })
-        {
-            var t = OrderCalculator.Calculate(Cart((price, qty)), fee, c, c?.Code, Now);
-            Assert.Equal(OrderCalculator.Round(t.Subtotal - t.Discount + t.ShippingFee), t.GrandTotal);
-            Assert.InRange(t.Discount, 0m, t.Subtotal);
-            Assert.True(t.GrandTotal >= t.ShippingFee);
-        }
+            foreach (var price in new[] { 99.99m, 1250m, 78500m })
+                foreach (var fee in new[] { 0m, 70m, 130m })
+                    foreach (var c in new[] { null, Coupon(value: 7), Coupon(DiscountType.FixedAmount, 750), Coupon(value: 25, max: 300) })
+                    {
+                        var t = OrderCalculator.Calculate(Cart((price, qty)), fee, c, c?.Code, Now);
+                        Assert.Equal(OrderCalculator.Round(t.Subtotal - t.Discount + t.ShippingFee), t.GrandTotal);
+                        Assert.InRange(t.Discount, 0m, t.Subtotal);
+                        Assert.True(t.GrandTotal >= t.ShippingFee);
+                    }
     }
 
     [Theory]

@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.angular/
+.vscode/
+.idea/
+coverage/
+e2e-results/
+playwright-report/
+test-results/
+blob-report/
+npm-debug.log
+**/.env
+**/.env.*
+Dockerfile
+.dockerignore

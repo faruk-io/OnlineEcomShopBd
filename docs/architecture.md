@@ -14,8 +14,9 @@ filtering/sorting/paging is expressed as composable `IQueryable` projections. Hi
 force materialising or re-inventing a query DSL. Infrastructure supplies the provider; tests swap it.
 
 ## Request pipeline (order matters)
-`ExceptionHandler → StatusCodePages → Serilog request log → Swagger → HTTPS → CORS → RateLimiter → Authentication →
-Authorization → OutputCache → Controllers (ValidationFilter → action)`
+`ForwardedHeaders → SecurityHeaders → ExceptionHandler → StatusCodePages → Serilog request log → Swagger (dev only) → HTTPS →
+Compression (not on /auth) → static uploads → CORS → Authentication → RateLimiter → Authorization (deny by default) → OutputCache →
+Controllers (ValidationFilter → action)`. The rate limiter sits **after** authentication so per-user partitions work.
 
 - **Errors**: everything becomes RFC 7807 `ProblemDetails` (with `traceId`). `ValidationException` → 400 with an
   `errors` map keyed by camelCase field; `NotFoundException` → 404; `ConflictException` → 409;
@@ -23,8 +24,10 @@ Authorization → OutputCache → Controllers (ValidationFilter → action)`
 - **Validation**: FluentValidation validators are resolved per action argument by `ValidationFilter`.
 - **Caching**: `Catalog` (60 s) and `Autocomplete` (30 s) output-cache policies, varied by the full query string.
   Prices/stock can therefore be up to 60 s stale; use the `catalog` tag to evict when admin writes are added.
-- **Rate limiting**: fixed window per client IP on `/api/v1/auth/*` (default 10 requests / 60 s, configurable).
-  Behind a reverse proxy configure `ForwardedHeaders`, otherwise every client shares the proxy's IP.
+- **Rate limiting**: fixed windows - `auth` (10/min per IP), `public` (60/min), `checkout` (30/min per user), and a global
+  ceiling (600/min per user or IP) for `/api`. Behind a reverse proxy configure `ForwardedHeaders:KnownNetworks`/`KnownProxies`,
+  otherwise every client shares the proxy's IP (see `docs/security.md`).
+- **Security**: deny-by-default authorization with a reviewed, test-frozen anonymous allow-list; see `docs/security.md`.
 
 ## Authentication
 - Access token: JWT (HS256, 15 min) with `sub`, `email`, `name`, `role` claims.
@@ -32,8 +35,12 @@ Authorization → OutputCache → Controllers (ValidationFilter → action)`
   rotated token revokes all of that user's live refresh tokens (theft detection). Rotation is an atomic
   compare-and-set (`UPDATE ... WHERE RevokedAt IS NULL`) so concurrent refreshes cannot both succeed.
 - Lockout after 5 failed logins (15 min). Login errors are deliberately identical for unknown user / bad password.
-- The SPA should keep the access token in memory and the refresh token in an `HttpOnly; Secure; SameSite` cookie once
-  the storefront is built (API currently takes it in the JSON body to stay client-agnostic).
+- **Web client (cookie mode)**: the refresh token travels only in an `HttpOnly; SameSite=Strict; Path=/api/v1/auth` cookie
+  (`Secure` over HTTPS); the JSON body has `refreshToken: null` and the SPA keeps the access token in memory. The cookie is only
+  honoured together with the custom header `X-Refresh-Mode: cookie` (cross-site forgery needs a CORS pre-flight that is never granted).
+  Other API clients can omit the header and use the body as before ("body mode").
+- `POST /auth/logout` revokes by possession of the refresh token (works after the access token expired); `POST /auth/logout-all`
+  revokes every session. Details and rationale: `docs/security.md`.
 
 ## Catalog query contract (`GET /api/v1/products`)
 | Param | Meaning |

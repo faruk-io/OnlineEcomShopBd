@@ -20,7 +20,7 @@ public class AuthApiTests(ApiFactory factory) : IClassFixture<ApiFactory>
         return await r.ReadAsync<AuthResponse>();
     }
 
-    private Task<HttpResponseMessage> RefreshAsync(string token) => _client.PostJsonAsync("/api/v1/auth/refresh", new { refreshToken = token });
+    private Task<HttpResponseMessage> RefreshAsync(string? token) => _client.PostJsonAsync("/api/v1/auth/refresh", new { refreshToken = token });
 
     [Fact]
     public async Task Register_ReturnsTokensAndCustomerRole()
@@ -139,8 +139,8 @@ public class AuthApiTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Equal(HttpStatusCode.Unauthorized, (await RefreshAsync("not-a-real-token")).StatusCode);
 
     [Fact]
-    public async Task Refresh_WithEmptyToken_Returns400() =>
-        Assert.Equal(HttpStatusCode.BadRequest, (await RefreshAsync("")).StatusCode);
+    public async Task Refresh_WithEmptyOrMissingToken_Returns401() =>
+        Assert.Equal([HttpStatusCode.Unauthorized, HttpStatusCode.Unauthorized], [(await RefreshAsync("")).StatusCode, (await RefreshAsync(null)).StatusCode]);
 
     [Fact]
     public async Task Logout_RevokesRefreshToken_AndIsIdempotent()
@@ -148,7 +148,7 @@ public class AuthApiTests(ApiFactory factory) : IClassFixture<ApiFactory>
         var auth = await RegisterAsync();
 
         HttpRequestMessage Logout() => new HttpRequestMessage(HttpMethod.Post, "/api/v1/auth/logout")
-            { Content = JsonContent.Create(new { refreshToken = auth.RefreshToken }) }.WithBearer(auth.AccessToken);
+        { Content = JsonContent.Create(new { refreshToken = auth.RefreshToken }) }.WithBearer(auth.AccessToken);
 
         Assert.Equal(HttpStatusCode.NoContent, (await _client.SendAsync(Logout())).StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, (await _client.SendAsync(Logout())).StatusCode);
@@ -156,8 +156,17 @@ public class AuthApiTests(ApiFactory factory) : IClassFixture<ApiFactory>
     }
 
     [Fact]
-    public async Task Logout_WithoutAccessToken_Returns401() =>
-        Assert.Equal(HttpStatusCode.Unauthorized, (await _client.PostJsonAsync("/api/v1/auth/logout", new { refreshToken = "x" })).StatusCode);
+    public async Task Logout_WorksWithoutAccessToken_BecauseItHasUsuallyExpired_AndRevokesTheToken()
+    {
+        var auth = await RegisterAsync();
+        // no Authorization header at all: possession of the refresh token is the credential
+        Assert.Equal(HttpStatusCode.NoContent, (await _client.PostJsonAsync("/api/v1/auth/logout", new { refreshToken = auth.RefreshToken })).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await RefreshAsync(auth.RefreshToken)).StatusCode);
+    }
+
+    [Fact]
+    public async Task Logout_WithAnUnknownToken_IsStill204_SoItCannotBeUsedToProbeTokens() =>
+        Assert.Equal(HttpStatusCode.NoContent, (await _client.PostJsonAsync("/api/v1/auth/logout", new { refreshToken = "does-not-exist" })).StatusCode);
 
     [Fact]
     public async Task SeededAdmin_CanLogin_AndHasAdminRole()

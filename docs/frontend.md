@@ -12,7 +12,9 @@
 | `/login`, `/register` | Auth | browser | `returnUrl` is validated (no open redirects) |
 | `/checkout` | Checkout | browser | auth required; address, shipping, payment, coupon; server quote |
 | `/account/profile`, `/account/addresses`, `/account/orders`, `/account/orders/:number` | Account | browser | guarded; tracking timeline, cancel, pay again; `?payment=` banner |
+| `/account/security`, `/account/security?reason=admin-mfa` | Security (MFA) | browser | guarded; set up / turn off two-step verification, regenerate recovery codes; the `reason` shows why an admin was sent here |
 | `/builder`, `/builder?b=CODE` | PC Builder | SSR | server-evaluated compatibility, share link, add build to cart |
+| `/forgot-password`, `/reset-password#token=`, `/verify-email#token=` | Account recovery | browser | token comes from the URL fragment, held in memory, removed from the address bar |
 | `/admin/**` | Admin panel | browser | separate lazy shell behind `adminGuard` (+ server-side role checks) |
 
 ## Listing URL contract (shareable / SEO)
@@ -50,7 +52,7 @@ native range inputs plus number fields; filters are real `fieldset/legend`, `det
 forms link errors with `aria-describedby`/`aria-invalid`; tables use `caption` + `th scope`; visible focus ring.
 
 ## Testing
-* `npm test -- --watch=false` — 187 Vitest specs: BDT formatting, URL ↔ filter mapping, auth/refresh single-flight,
+* `npm test -- --watch=false` — 415 Vitest specs: BDT formatting, URL ↔ filter mapping, auth/refresh single-flight,
   interceptors (token, 401→refresh→replay, error mapping, loading), cart/wishlist/compare services incl. guest→server
   merge, SEO tags, components (card, search combobox with debounce + keyboard, pagination, slider, header/mega menu) and
   pages (listing ↔ URL ↔ API, product, cart, login/register).
@@ -64,5 +66,23 @@ forms link errors with `aria-describedby`/`aria-invalid`; tables use `caption` +
 * Seed product images are generated SVG placeholders; admin uploads are stored on local disk (`Storage:RootPath`) — use blob storage + CDN to scale out.
 * Reviews are display-only (no write endpoint yet); product data has none, so ratings show "No reviews yet".
 * Facet counts are per category (not recomputed for the currently selected filters).
-* The refresh token is in `localStorage`; move it to an `HttpOnly; Secure; SameSite` cookie (API + server.ts proxy) before production.
 * Behind a proxy, enable `ForwardedHeaders` in the API so auth rate limiting sees client IPs, not the SSR server's.
+
+## Phase 4 notes
+* **Auth**: the refresh token is an HttpOnly cookie the app cannot read; `tb.session.v1` in localStorage is only a non-secret hint that a session may exist.
+* **SSR server** (`src/server.ts`, helpers in `src/server-security.ts`): security headers, hash-based CSP computed per rendered page, compression,
+  `/api` + `/uploads` gateway with timeouts, `Set-Cookie` forwarding and a safe path allow-list. HSTS is opt-in (`HSTS=1`).
+* **Quality gates**: `npm run lint` (angular-eslint, templates + a11y), `npm test`, `npm run build` (bundle budgets: initial 450/550 kB), `npm run e2e` (Playwright).
+
+## Phase 6 notes (two-step verification)
+* **Login can answer 202.** `AuthService.login()` returns `{kind:'session'} | {kind:'mfa'}`; for a challenge only the *existence/expiry* is exposed (`mfaPending`,
+  `mfaExpiresAt`), the challenge token stays private in memory (never storage or URL). `verifyMfa({code}|{recoveryCode})` completes it through the same session path
+  as a normal login (cookie mode, cart/wishlist merge). A wrong code keeps the challenge; an expired/locked one returns to the credentials step.
+* **Admins**: `adminGuard` sends an admin whose `mfaRequired && !mfaSession` to `/account/security?reason=admin-mfa`. The error interceptor does the same (once, no toast)
+  for any 403 with `code: 'mfa_required'` (e.g. a session that lost MFA mid-visit).
+* **Security page**: setup shows the QR and the secret as grouped text; recovery codes are shown once, only in a component signal, and cannot be dismissed before the
+  acknowledge box is ticked. Turning MFA off is hidden when the policy requires it; after a successful disable all sessions are gone, so the app signs out locally.
+* **QR code** (`shared/qr-code`): rendered **client-side** as an `<svg>` with one `<path>` (no innerHTML, SSR-safe, CSP-safe) from `qrcode-generator` (MIT, zero deps, lazy chunk
+  only; +2.3 kB on the initial bundle). The secret never leaves the page (no third-party QR service, no `<img src>`).
+* **Tests**: 415 Vitest specs; E2E `mfa.spec.ts` (customer opt-in + replay refusal, recovery code once, admin enrol/guard/re-login) uses `e2e/support/totp.ts`
+  (RFC 6238; ascending step offsets because the server accepts each step once).

@@ -29,6 +29,19 @@ dotnet run --project src/TechBazar.Api          # Swagger: https://localhost:708
 Apply the new Phase 3 migration with the same `dotnet ef database update` (it is incremental; existing data is kept and the
 seeder adds the new CPU-cooler category/products). The admin account is `admin@techbazar.bd` with the `Seed:AdminPassword` you set.
 
+### Password reset & email verification
+Both flows email a one-time link (`/reset-password#token=…`, `/verify-email#token=…`). In development the emails are only logged (the full text,
+including the link, is at Debug level in the API console). With Docker, **Mailpit** catches them: open http://localhost:8025.
+For real delivery set SMTP (credentials as secrets, never in git):
+```bash
+dotnet user-secrets --project src/TechBazar.Api set "Email:Smtp:Host" "smtp.your-provider.com"
+dotnet user-secrets --project src/TechBazar.Api set "Email:Smtp:FromAddress" "no-reply@your-domain"
+dotnet user-secrets --project src/TechBazar.Api set "Email:Smtp:Username" "<user>"        # TLS is mandatory when a username is set
+dotnet user-secrets --project src/TechBazar.Api set "Email:Smtp:Password" "<password>"
+dotnet user-secrets --project src/TechBazar.Api set "Account:StorefrontBaseUrl" "https://www.your-domain"   # origin used in emailed links
+```
+Optional: `Account:RequireVerifiedEmailForCheckout=true` to require a verified address before ordering. Design and threat model: [`docs/security.md`](docs/security.md).
+
 ### Online payments (SSLCommerz sandbox)
 Cash on delivery works out of the box. To enable "Pay online", create a free sandbox store, then set
 `SslCommerz:StoreId`, `SslCommerz:StorePassword` (user-secrets) and `Payments:PublicApiBaseUrl` to a URL the gateway can reach
@@ -50,9 +63,52 @@ npm run build && API_URL=http://localhost:5080 npm run serve:ssr:techbazar-web  
 ```
 Register a customer on `/register`. The admin panel is at `/admin` (sign in as the seeded admin). PC Builder: `/builder`.
 
+## Run everything with Docker (SQL Server included)
+```bash
+cp .env.example .env            # then fill in the three secrets (commands are in the file; never commit .env)
+docker compose up --build       # SQL Server + API (migrates & seeds in Development) + storefront
+# storefront http://localhost:4000   API/Swagger http://localhost:5080/swagger   admin: admin@techbazar.bd / SEED_ADMIN_PASSWORD
+# emails (verification / password reset) are caught by Mailpit: http://localhost:8025
+```
+Details, resetting the database and what is *not* production-ready: [`docs/docker.md`](docs/docker.md). The Docker images were written
+and validated statically here (`docker compose config`); there was no Docker daemon in the authoring sandbox, so run the first build yourself.
+
+## Quality gates (what CI runs)
+```bash
+# backend (from /backend)
+dotnet build -c Release -warnaserror && dotnet format --verify-no-changes && dotnet test -c Release
+dotnet list package --vulnerable --include-transitive      # must report nothing
+# frontend (from /frontend)
+npm run lint && npm test -- --watch=false && npm run build && npm audit --omit=dev --audit-level=high
+# end-to-end (Playwright: real browser -> SSR server -> real API pipeline on a SQLite test host; Chromium via `npm run e2e:install`)
+npm run e2e                                                  # browse > filter > cart > register > checkout (COD) + security + guards + builder
+```
+`.github/workflows/ci.yml` runs these as `backend`, `frontend`, `e2e` and `docker` jobs; Dependabot is configured. In the authoring sandbox set
+`PW_CHROMIUM_PATH` to a preinstalled Chromium (see the header of `frontend/playwright.config.ts`).
+
+### Two-step verification (MFA) - mandatory for admins
+TOTP (Google Authenticator, Microsoft Authenticator, Authy, 1Password, ...). **Administrators must use it**: after signing in with the password
+only, the admin API answers `403 mfa_required` and the app sends the admin to *Account > Security* to scan a QR code and confirm a first code
+(then 10 one-time recovery codes are shown once). Every other account can opt in on the same page.
+```bash
+# encrypts authenticator secrets at rest (required outside Development; Development derives one from Jwt:Key). Keep it out of git and out of DB backups.
+dotnet user-secrets --project src/TechBazar.Api set "Mfa:SecretKey" "$(openssl rand -base64 32)"
+# lost phone AND recovery codes (operator only): removes the second factor and ends all sessions
+dotnet run --project src/TechBazar.Api -- mfa-reset admin@techbazar.bd
+```
+First start: **sign in as the seeded admin and enrol straight away** (until then anyone with the password could enrol their own device).
+Details, threat table with regression tests and limits (no key rotation, TOTP is phishable): [`docs/security.md`](docs/security.md#phase-6-two-step-verification-totp-mandatory-for-administrators).
+
+## Security & performance
+* [`docs/security.md`](docs/security.md): OWASP review, **every finding and fix with its regression test**, accepted risks, production checklist.
+* [`docs/performance.md`](docs/performance.md): measured query counts per endpoint, indexes, compression, bundle budgets.
+* Production configuration that matters: `Jwt__Key`, `Mfa__SecretKey`, `Auth__RefreshCookie__Secure=Always`, `ForwardedHeaders__KnownNetworks__0=<your proxy CIDR>`,
+  `HSTS=1` (web), `Security__HttpsRedirection=false` (API behind a TLS proxy), `Swagger__Enabled` unset.
+
 ## Tests
 ```bash
-cd backend  && dotnet test                  # 320 unit + 79 integration (SQLite in-memory for tests only)
-cd frontend && npm test -- --watch=false    # 282 Vitest specs
+cd backend  && dotnet test                  # 398 unit + 165 integration (SQLite in-memory for tests only)
+cd frontend && npm test -- --watch=false    # 370 Vitest specs
+cd frontend && npm run e2e                  # 16 Playwright tests
 ```
-Screenshots of the storefront: [`docs/screenshots/`](docs/screenshots). Design notes: [`docs/frontend.md`](docs/frontend.md).
+Screenshots of the storefront: [`docs/screenshots/`](docs/screenshots). Design notes: [`docs/frontend.md`](docs/frontend.md), [`docs/architecture.md`](docs/architecture.md).

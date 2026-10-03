@@ -42,7 +42,7 @@ public interface IAddressService
 public sealed record ShippingOptionDto(ShippingMethod Method, string Label, decimal Fee, string Description);
 public sealed record PaymentOptionDto(PaymentMethod Method, string Label, string Description, bool Enabled);
 public sealed record StoreDto(string Name, string Address);
-public sealed record CheckoutOptionsDto(IReadOnlyList<ShippingOptionDto> Shipping, IReadOnlyList<PaymentOptionDto> Payment, StoreDto Store, IReadOnlyList<string> Divisions);
+public sealed record CheckoutOptionsDto(IReadOnlyList<ShippingOptionDto> Shipping, IReadOnlyList<PaymentOptionDto> Payment, StoreDto Store, IReadOnlyList<string> Divisions, bool RequireVerifiedEmail = false);
 
 public sealed record CheckoutQuoteRequest(ShippingMethod ShippingMethod, int? AddressId, string? CouponCode);
 

@@ -25,6 +25,8 @@ erDiagram
     Order ||--|{ OrderItem : contains
     Product ||--o{ OrderItem : "sold as"
     Users ||--o{ RefreshToken : "has sessions"
+    Users ||--o| MfaCredential : "authenticator"
+    Users ||--o{ MfaRecoveryCode : "recovery codes"
     Users }o--o{ Roles : "UserRoles"
 
     Category {
@@ -145,6 +147,28 @@ erDiagram
         decimal UnitPrice
         int Quantity
         decimal LineTotal
+    }
+    AccountToken {
+        int Id PK
+        guid UserId FK
+        int Purpose "EmailVerification|PasswordReset|MfaChallenge"
+        string TokenHash UK "SHA-256, never the raw token"
+        string Email "normalised, bound at issue"
+        datetime ExpiresAt
+        datetime UsedAt "spent or superseded"
+    }
+    MfaCredential {
+        int Id PK
+        guid UserId FK,UK "one authenticator per account"
+        string EncryptedSecret "AES-256-GCM, key outside the DB"
+        datetime ConfirmedAt "null = pending setup, enforces nothing"
+        long LastUsedStep "replay protection"
+    }
+    MfaRecoveryCode {
+        int Id PK
+        guid UserId FK
+        string CodeHash "HMAC-SHA256 (keyed, user-bound), UK with UserId"
+        datetime UsedAt "single use"
     }
     OrderStatusHistory {
         int Id PK

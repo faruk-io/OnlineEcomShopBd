@@ -1,6 +1,7 @@
 import { HttpClient, HttpContext } from '@angular/common/http';
 import { HttpTestingController } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
+import { Router } from '@angular/router';
 import { BACKGROUND, SILENT_ERRORS, SKIP_AUTH } from '../config';
 import { ApiError } from '../models/api.models';
 import { AuthService } from '../services/auth.service';
@@ -56,7 +57,7 @@ describe('HTTP interceptors', () => {
 
       http.expectOne('/api/v1/cart').flush({}, { status: 401, statusText: 'Unauthorized' });
       const refresh = http.expectOne('/api/v1/auth/refresh');
-      expect(refresh.request.body).toEqual({ refreshToken: 'refresh-1' });
+      expect(refresh.request.body).toEqual({});   // cookie mode: the HttpOnly cookie carries the token
       refresh.flush(authResponse(2));
 
       const replay = http.expectOne('/api/v1/cart');
@@ -105,6 +106,38 @@ describe('HTTP interceptors', () => {
       http.expectOne('/api/v1/cart').flush({}, { status: 401, statusText: 'Unauthorized' });
       http.expectNone('/api/v1/auth/refresh');
       expect(error?.status).toBe(401);
+    });
+  });
+
+  describe('mfa_required', () => {
+    const mfaRequired = () => client.get('/api/v1/admin/orders').subscribe({ error: () => undefined });
+    const flush = () => http.expectOne('/api/v1/admin/orders').flush(
+      { status: 403, title: 'Forbidden', code: 'mfa_required' }, { status: 403, statusText: 'Forbidden' });
+
+    it('sends the admin to enrolment without a generic error toast', () => {
+      const nav = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
+      mfaRequired();
+      flush();
+      expect(nav).toHaveBeenCalledTimes(1);
+      expect(nav).toHaveBeenCalledWith('/account/security?reason=admin-mfa');
+      expect(toast.toasts()).toEqual([]);
+    });
+
+    it('does not navigate again when already on the security page (no loop)', () => {
+      const router = TestBed.inject(Router);
+      Object.defineProperty(router, 'url', { get: () => '/account/security?reason=admin-mfa' });
+      const nav = vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
+      mfaRequired();
+      flush();
+      expect(nav).not.toHaveBeenCalled();
+    });
+
+    it('still toasts an ordinary 403', () => {
+      const nav = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
+      client.get('/api/v1/admin/orders').subscribe({ error: () => undefined });
+      http.expectOne('/api/v1/admin/orders').flush({ status: 403, title: 'Forbidden' }, { status: 403, statusText: 'Forbidden' });
+      expect(nav).not.toHaveBeenCalled();
+      expect(toast.toasts()[0].message).toContain('permission');
     });
   });
 

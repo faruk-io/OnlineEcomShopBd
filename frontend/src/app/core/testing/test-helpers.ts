@@ -11,12 +11,12 @@ export const provideTestHttp = () => [
   provideHttpClientTesting(),
 ];
 
-export const USER: UserDto = { id: 'u-1', email: 'rahim@example.com', fullName: 'Rahim Uddin', phone: null, roles: ['Customer'] };
+export const USER: UserDto = { id: 'u-1', email: 'rahim@example.com', fullName: 'Rahim Uddin', phone: null, roles: ['Customer'], emailConfirmed: true, mfaEnabled: false, mfaRequired: false, mfaSession: false };
 
 export const authResponse = (n = 1, user: UserDto = USER): AuthResponse => ({
   accessToken: `access-${n}`,
   accessTokenExpiresAt: '2099-01-01T00:00:00Z',
-  refreshToken: `refresh-${n}`,
+  refreshToken: null,   // cookie mode: the API never puts the refresh token in the body
   refreshTokenExpiresAt: '2099-02-01T00:00:00Z',
   user,
 });

@@ -9,6 +9,10 @@ export const serverRoutes: ServerRoute[] = [
   { path: 'account/**', renderMode: RenderMode.Client },
   { path: 'login', renderMode: RenderMode.Client },
   { path: 'register', renderMode: RenderMode.Client },
+  // The emailed links carry a one-time token in the #fragment; only the browser ever sees it, so these pages never render on the server.
+  { path: 'forgot-password', renderMode: RenderMode.Client },
+  { path: 'reset-password', renderMode: RenderMode.Client },
+  { path: 'verify-email', renderMode: RenderMode.Client },
   { path: 'admin', renderMode: RenderMode.Client },
   { path: 'admin/**', renderMode: RenderMode.Client },
   { path: 'checkout', renderMode: RenderMode.Client },

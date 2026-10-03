@@ -64,12 +64,6 @@ describe('BuilderPage', () => {
     http.expectOne('/api/v1/pc-builder/slots').flush(SLOTS);
     await tick();
   };
-  const pickCpu = async (cpu = productItem()) => {
-    await click('#choose-Cpu');
-    productsReq().flush(page([cpu]));
-    await tick();
-    await click('app-part-picker .part button');
-  };
 
   afterEach(() => {
     http.verify();

@@ -18,7 +18,7 @@ import { imageProblem, inputValue, problemText } from './admin.util';
           <input class="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp" (change)="pick($event)" [disabled]="busy()" [attr.aria-label]="'Upload ' + label().toLowerCase()" />
         </label>
       </div>
-      @if (value()) { <img class="prev" [src]="value()" alt="" width="64" height="64" /> }
+      @if (value()) { <img class="prev" [src]="value()" alt="" width="64" height="64" loading="lazy" /> }
     </adm-field>
   `,
   styles: `.row { display: flex; gap: .5rem; align-items: center; } .prev { object-fit: contain; border: 1px solid var(--border); border-radius: var(--radius); margin-top: .35rem; background: #fff; } .disabled { opacity: .6; } label.btn:focus-within { box-shadow: var(--focus); }`,

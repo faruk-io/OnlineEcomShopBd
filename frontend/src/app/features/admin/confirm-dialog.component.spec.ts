@@ -7,7 +7,7 @@ import { ConfirmDialogComponent } from './confirm-dialog.component';
   template: `<button id="opener" (click)="open.set(true)">Open</button>
     <adm-confirm [open]="open()" heading="Delete it?" message="Really?" (confirmed)="log.push('yes'); open.set(false)" (cancelled)="log.push('no'); open.set(false)" />`,
 })
-class Host { open = signal(false); log: string[] = []; }
+class Host { readonly open = signal(false); log: string[] = []; }
 
 describe('ConfirmDialogComponent', () => {
   it('opens as a labelled modal, focuses Cancel, and emits confirm / cancel', async () => {

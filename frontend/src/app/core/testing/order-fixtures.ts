@@ -17,6 +17,7 @@ export const OPTIONS: CheckoutOptions = {
   ],
   store: { name: 'TechBazar BD Store', address: 'Dhaka' },
   divisions: ['Dhaka', 'Chattogram'],
+  requireVerifiedEmail: false,
 };
 
 export const quoteOf = (over: Partial<CheckoutQuote> = {}): CheckoutQuote => ({

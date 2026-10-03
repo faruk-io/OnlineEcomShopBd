@@ -163,7 +163,7 @@ import {
           <ul class="imgs">
             @for (img of f().images; track img.uid; let i = $index) {
               <li class="img">
-                <img [src]="img.url" [alt]="img.altText || 'Product image ' + (i + 1)" width="96" height="96" />
+                <img [src]="img.url" [alt]="img.altText || 'Product image ' + (i + 1)" width="96" height="96" loading="lazy" />
                 <div class="img-fields">
                   <label class="visually-hidden" [for]="'alt-' + img.uid">Alt text for image {{ i + 1 }}</label>
                   <input [id]="'alt-' + img.uid" class="input" maxlength="250" placeholder="Alt text" [value]="img.altText" (input)="setAlt(img.uid, val($event))" />

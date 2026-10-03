@@ -1,5 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using TechBazar.Api.Extensions;
+using TechBazar.Application.Auth;
 using TechBazar.Application.Common;
 using TechBazar.Application.Orders;
 using TechBazar.Application.Payments;
@@ -48,12 +51,13 @@ public sealed class CheckoutController(ICheckoutService checkout) : ApiControlle
     /// <summary>Server-side price quote for the signed-in user's cart: lines, coupon, shipping and grand total.</summary>
     [HttpPost("quote")]
     [Authorize]
+    [EnableRateLimiting(Policies.CheckoutRateLimit)]
     public async Task<ActionResult<CheckoutQuoteDto>> Quote(CheckoutQuoteRequest request, CancellationToken ct) =>
         Ok(await checkout.QuoteAsync(User.UserId(), request, ct));
 }
 
 [Authorize]
-public sealed class OrdersController(ICheckoutService checkout, IOrderService orders, CatalogCache cache) : ApiControllerBase
+public sealed class OrdersController(ICheckoutService checkout, IOrderService orders, IAccountService account, CatalogCache cache) : ApiControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<PagedResult<OrderSummaryDto>>> List([FromQuery] int page = 1, [FromQuery] int pageSize = 10, CancellationToken ct = default) =>
@@ -66,10 +70,12 @@ public sealed class OrdersController(ICheckoutService checkout, IOrderService or
 
     /// <summary>Places the order from the server-side cart. Totals are recalculated here; nothing price-related is read from the request.</summary>
     [HttpPost]
+    [EnableRateLimiting(Policies.CheckoutRateLimit)]
     [ProducesResponseType(typeof(PlaceOrderResult), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Place(PlaceOrderRequest request, CancellationToken ct)
     {
+        await account.EnsureCanCheckoutAsync(User.UserId(), ct);   // no-op unless Account:RequireVerifiedEmailForCheckout
         var result = await checkout.PlaceAsync(User.UserId(), User.Email(), request, ct);
         await cache.InvalidateAsync(ct);
         return Created($"/api/v1/orders/{result.Order.OrderNumber}", result);
@@ -85,6 +91,7 @@ public sealed class OrdersController(ICheckoutService checkout, IOrderService or
 
     /// <summary>Starts a fresh online payment attempt (e.g. after a failed or abandoned one).</summary>
     [HttpPost("{orderNumber}/pay")]
+    [EnableRateLimiting(Policies.CheckoutRateLimit)]
     public async Task<ActionResult<PaymentRedirectDto>> Pay(string orderNumber, CancellationToken ct) =>
         Ok(await orders.RetryPaymentAsync(User.UserId(), orderNumber, ct));
 }

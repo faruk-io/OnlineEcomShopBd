@@ -125,6 +125,53 @@ namespace TechBazar.Infrastructure.Persistence.Migrations
                     b.ToTable("UserTokens", (string)null);
                 });
 
+            modelBuilder.Entity("TechBazar.Domain.Entities.AccountToken", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedByIp")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("Purpose")
+                        .HasColumnType("int");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTime?>("UsedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "Purpose", "CreatedAt");
+
+                    b.ToTable("AccountTokens");
+                });
+
             modelBuilder.Entity("TechBazar.Domain.Entities.Address", b =>
                 {
                     b.Property<int>("Id")
@@ -462,6 +509,69 @@ namespace TechBazar.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("TechBazar.Domain.Entities.MfaCredential", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("ConfirmedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("EncryptedSecret")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<long>("LastUsedStep")
+                        .HasColumnType("bigint");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId")
+                        .IsUnique();
+
+                    b.ToTable("MfaCredentials");
+                });
+
+            modelBuilder.Entity("TechBazar.Domain.Entities.MfaRecoveryCode", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("CodeHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("UsedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "CodeHash")
+                        .IsUnique();
+
+                    b.ToTable("MfaRecoveryCodes");
+                });
+
             modelBuilder.Entity("TechBazar.Domain.Entities.Order", b =>
                 {
                     b.Property<int>("Id")
@@ -568,11 +678,13 @@ namespace TechBazar.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("CreatedAt");
 
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("CreatedAt"), new[] { "Status", "GrandTotal" });
+
                     b.HasIndex("OrderNumber")
                         .IsUnique()
                         .HasFilter("[IsDeleted] = 0");
 
-                    b.HasIndex("Status");
+                    b.HasIndex("Status", "CreatedAt");
 
                     b.HasIndex("UserId", "CreatedAt");
 
@@ -632,6 +744,8 @@ namespace TechBazar.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("OrderId");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("OrderId"), new[] { "ProductId", "Quantity", "LineTotal" });
 
                     b.HasIndex("ProductId");
 
@@ -952,9 +1066,9 @@ namespace TechBazar.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("SoldCount");
 
-                    b.HasIndex("StockStatus");
-
                     b.HasIndex("CategoryId", "EffectivePrice");
+
+                    b.HasIndex("StockStatus", "StockQuantity");
 
                     b.ToTable("Products", t =>
                         {
@@ -1101,6 +1215,8 @@ namespace TechBazar.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("Key", "Value");
 
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("Key", "Value"), new[] { "ProductId" });
+
                     b.ToTable("ProductSpecifications");
                 });
 
@@ -1121,6 +1237,9 @@ namespace TechBazar.Infrastructure.Persistence.Migrations
 
                     b.Property<DateTime>("ExpiresAt")
                         .HasColumnType("datetime2");
+
+                    b.Property<bool>("MfaVerified")
+                        .HasColumnType("bit");
 
                     b.Property<string>("ReplacedByTokenHash")
                         .HasMaxLength(64)
@@ -1435,6 +1554,15 @@ namespace TechBazar.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("TechBazar.Domain.Entities.AccountToken", b =>
+                {
+                    b.HasOne("TechBazar.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("TechBazar.Domain.Entities.Address", b =>
                 {
                     b.HasOne("TechBazar.Infrastructure.Identity.ApplicationUser", null)
@@ -1480,6 +1608,24 @@ namespace TechBazar.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Parent");
+                });
+
+            modelBuilder.Entity("TechBazar.Domain.Entities.MfaCredential", b =>
+                {
+                    b.HasOne("TechBazar.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("TechBazar.Domain.Entities.MfaRecoveryCode", b =>
+                {
+                    b.HasOne("TechBazar.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("TechBazar.Domain.Entities.Order", b =>

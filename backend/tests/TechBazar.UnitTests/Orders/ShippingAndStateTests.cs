@@ -121,9 +121,9 @@ public class OrderStateMachineTests
     public void EveryTransitionTargetIsPartOfAReachableTimelineOrTerminal()
     {
         foreach (var m in new[] { Home, Pickup })
-        foreach (var s in Enum.GetValues<OrderStatus>())
-        foreach (var next in OrderStateMachine.Next(s, m))
-            Assert.True(OrderStateMachine.Timeline(m).Contains(next) || next is OrderStatus.Cancelled or OrderStatus.Returned, $"{s}->{next} ({m})");
+            foreach (var s in Enum.GetValues<OrderStatus>())
+                foreach (var next in OrderStateMachine.Next(s, m))
+                    Assert.True(OrderStateMachine.Timeline(m).Contains(next) || next is OrderStatus.Cancelled or OrderStatus.Returned, $"{s}->{next} ({m})");
     }
 
     [Fact]
