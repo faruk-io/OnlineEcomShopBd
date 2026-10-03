@@ -1,7 +1,9 @@
+using System.Data.Common;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -47,6 +49,8 @@ public class ApiFactory : WebApplicationFactory<Program>
     private readonly string _uploads = Path.Combine(Path.GetTempPath(), "tb-it-uploads-" + Guid.NewGuid().ToString("N"));
 
     public CapturingEmailSender Emails { get; } = new();
+    /// <summary>Counts every SQL command the API sends, so tests can budget queries per endpoint and catch N+1 patterns.</summary>
+    public SqlCommandCounter Sql { get; } = new();
     public string UploadsPath => _uploads;
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -80,7 +84,7 @@ public class ApiFactory : WebApplicationFactory<Program>
             services.AddSingleton<IPaymentGateway, CashOnDeliveryGateway>();
             services.AddSingleton<IPaymentGateway, FakeOnlineGateway>();
             _connection.Open();
-            services.AddDbContext<ApplicationDbContext>(o => o.UseSqlite(_connection));
+            services.AddDbContext<ApplicationDbContext>(o => o.UseSqlite(_connection).AddInterceptors(Sql));
         });
     }
 
@@ -100,4 +104,23 @@ public class ApiFactory : WebApplicationFactory<Program>
         _connection.Dispose();
         try { if (Directory.Exists(_uploads)) Directory.Delete(_uploads, true); } catch { /* best effort */ }
     }
+}
+
+/// <summary>EF Core interceptor that records the SQL text of each command (reader, scalar and non-query).</summary>
+public sealed class SqlCommandCounter : DbCommandInterceptor
+{
+    private readonly List<string> _commands = [];
+    private readonly object _gate = new();
+
+    public IReadOnlyList<string> Commands { get { lock (_gate) return [.. _commands]; } }
+    public int Count { get { lock (_gate) return _commands.Count; } }
+    private void Record(DbCommand c) { lock (_gate) _commands.Add(c.CommandText); }
+    public void Reset() { lock (_gate) _commands.Clear(); }
+
+    public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result, CancellationToken ct = default) { Record(command); return new(result); }
+    public override InterceptionResult<DbDataReader> ReaderExecuting(DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result) { Record(command); return result; }
+    public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(DbCommand command, CommandEventData eventData, InterceptionResult<int> result, CancellationToken ct = default) { Record(command); return new(result); }
+    public override InterceptionResult<int> NonQueryExecuting(DbCommand command, CommandEventData eventData, InterceptionResult<int> result) { Record(command); return result; }
+    public override ValueTask<InterceptionResult<object>> ScalarExecutingAsync(DbCommand command, CommandEventData eventData, InterceptionResult<object> result, CancellationToken ct = default) { Record(command); return new(result); }
+    public override InterceptionResult<object> ScalarExecuting(DbCommand command, CommandEventData eventData, InterceptionResult<object> result) { Record(command); return result; }
 }

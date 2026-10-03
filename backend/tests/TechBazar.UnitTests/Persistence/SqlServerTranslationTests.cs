@@ -96,4 +96,25 @@ public class SqlServerTranslationTests : IDisposable
         }
         Assert.Equal(typeof(decimal), product.FindProperty(nameof(Product.Price))!.GetProviderClrType() ?? typeof(decimal));
     }
+
+    // ---- admin dashboard: aggregation must run IN the database (bounded rows), and must translate for SQL Server
+    [Fact]
+    public void DashboardDailySales_GroupsByDateInSql()
+    {
+        var sql = TechBazar.Application.Admin.DashboardService.DailySales(_db.Orders.AsNoTracking(), new DateTime(2026, 9, 1)).ToQueryString();
+        Assert.True(sql.Contains("CONVERT(date, [o].[CreatedAt])") && sql.Contains("GROUP BY [o0].[Key]"), sql);
+        Assert.Contains("SUM([o0].[GrandTotal])", sql);
+        Assert.Contains("COUNT(*)", sql);
+        Assert.Contains("[o].[Status] <> 6", sql);    // Cancelled
+        Assert.Contains("[o].[Status] <> 7", sql);    // Returned
+    }
+
+    [Fact]
+    public void DashboardTopProducts_IsAJoinedGroupByLimitedToFiveRows()
+    {
+        var sql = TechBazar.Application.Admin.DashboardService.TopProducts(_db.OrderItems.AsNoTracking(), new DateTime(2026, 9, 1)).ToQueryString().Replace("\r", "");
+        Assert.True(sql.Contains("INNER JOIN (") && sql.Contains("GROUP BY [o].[ProductId]"), sql);
+        Assert.True(sql.Contains("DECLARE @__p_1 int = 5;") && sql.Contains("SELECT TOP(@__p_1)"), sql);   // five rows leave the database
+        Assert.True(sql.Contains("ORDER BY COALESCE(SUM([o].[LineTotal]), 0.0) DESC"), sql);               // ranked by revenue, in SQL
+    }
 }

@@ -95,8 +95,10 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         b.Property(x => x.ShipPostalCode).HasMaxLength(10);
         b.HasUniqueActiveIndex(x => x.OrderNumber);
         b.HasIndex(x => new { x.UserId, x.CreatedAt });
-        b.HasIndex(x => x.Status);
-        b.HasIndex(x => x.CreatedAt);
+        // admin lists: filter by status, newest first; status counts
+        b.HasIndex(x => new { x.Status, x.CreatedAt });
+        // dashboard sales window: range on CreatedAt, aggregating Status + GrandTotal straight from the index
+        b.HasIndex(x => x.CreatedAt).IncludeProperties(x => new { x.Status, x.GrandTotal });
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
     }
 }
@@ -108,7 +110,8 @@ public class OrderItemConfiguration : IEntityTypeConfiguration<OrderItem>
         b.Property(x => x.ProductName).HasMaxLength(250).IsRequired();
         b.Property(x => x.Sku).HasMaxLength(64).IsRequired();
         b.ToTable(t => t.HasCheckConstraint("CK_OrderItems_Quantity", "[Quantity] > 0"));
-        b.HasIndex(x => x.OrderId);
+        // order detail + dashboard top-products join: by OrderId, reading ProductId/Quantity/LineTotal without touching the table rows
+        b.HasIndex(x => x.OrderId).IncludeProperties(x => new { x.ProductId, x.Quantity, x.LineTotal });
         b.HasOne(x => x.Order).WithMany(x => x.Items).HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Cascade);
         b.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
     }

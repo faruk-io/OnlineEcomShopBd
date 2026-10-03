@@ -33,6 +33,7 @@ builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
     ["ConnectionStrings:DefaultConnection"] = "unused-in-e2e",
     ["RateLimiting:Auth:PermitLimit"] = "100000",
     ["RateLimiting:Public:PermitLimit"] = "100000",
+    ["RateLimiting:Global:PermitLimit"] = "1000000",
     ["Storage:RootPath"] = uploads,
 });
 

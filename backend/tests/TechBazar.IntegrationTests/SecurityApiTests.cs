@@ -385,10 +385,11 @@ public class SecurityApiTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Single(o.KnownNetworks);
         Assert.Equal(Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto, o.ForwardedHeaders);
 
-        // the default (nothing configured) trusts nobody except loopback, i.e. spoofed X-Forwarded-For from the internet is ignored
+        // the default (nothing configured) trusts loopback only - NEVER an empty list, which the middleware treats as "trust everyone"
+        // (behaviour verified end to end in ForwardedHeadersTests)
         var def = factory.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<Microsoft.AspNetCore.Builder.ForwardedHeadersOptions>>().Value;
-        Assert.Empty(def.KnownNetworks);
-        Assert.Empty(def.KnownProxies);
+        Assert.NotEmpty(def.KnownProxies.Concat(def.KnownNetworks.Select(_ => System.Net.IPAddress.Any)));
+        Assert.All(def.KnownProxies, p => Assert.True(System.Net.IPAddress.IsLoopback(p)));
     }
 
     // ------------------------------------------------------------------ A03: injection probes

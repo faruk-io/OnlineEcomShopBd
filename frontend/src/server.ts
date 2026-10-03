@@ -7,7 +7,7 @@ import {
 import compression from 'compression';
 import express from 'express';
 import { join } from 'node:path';
-import { appendForwardedFor, baseSecurityHeaders, bodyLimitFor, contentSecurityPolicy, isSafeUploadPath } from './server-security';
+import { appendForwardedFor, baseSecurityHeaders, bodyLimitFor, cacheControlForStatic, contentSecurityPolicy, isSafeUploadPath } from './server-security';
 
 const browserDistFolder = join(import.meta.dirname, '../browser');
 
@@ -93,9 +93,9 @@ app.use('/uploads', async (req, res) => {
  */
 app.use(
   express.static(browserDistFolder, {
-    maxAge: '1y',
     index: false,
     redirect: false,
+    setHeaders: (res, filePath) => res.setHeader('Cache-Control', cacheControlForStatic(filePath)),
   }),
 );
 

@@ -75,3 +75,13 @@ export function appendForwardedFor(prior: string | string[] | undefined, peer: s
 export function bodyLimitFor(path: string): string {
   return path.startsWith('/api/v1/admin/uploads/') ? '6mb' : '1mb';
 }
+
+/**
+ * Content-hashed build output (`main-3KNJFOGF.js`, `styles-2C7T3UHH.css`, `chunk-ABC123xy.js`) can be cached for a year because any change
+ * produces a new file name. Everything else (placeholder images, favicon, robots.txt, ...) keeps its name when it changes, so it must
+ * revalidate within the hour or users would keep a stale copy for a year.
+ */
+export function cacheControlForStatic(fileName: string): string {
+  const hashed = /[-.][A-Za-z0-9_-]{8,}\.(?:m?js|css|woff2?)$/.test(fileName);
+  return hashed ? 'public, max-age=31536000, immutable' : 'public, max-age=3600';
+}

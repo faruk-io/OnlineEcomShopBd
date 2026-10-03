@@ -59,7 +59,8 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
         b.HasUniqueActiveIndex(x => x.Sku);
         b.HasIndex(x => new { x.CategoryId, x.EffectivePrice });
         b.HasIndex(x => x.BrandId);
-        b.HasIndex(x => x.StockStatus);
+        // serves the in-stock filter (leading column) AND the low-stock range scans of the admin product list / dashboard
+        b.HasIndex(x => new { x.StockStatus, x.StockQuantity });
         b.HasIndex(x => x.SoldCount);
         b.HasIndex(x => x.CreatedAt);
 
@@ -93,7 +94,8 @@ public class ProductSpecificationConfiguration : IEntityTypeConfiguration<Produc
         b.Property(x => x.Value).HasMaxLength(300).IsRequired();
         b.HasIndex(x => x.ProductId);
         // Serves spec filtering (Key = ? AND Value IN (...)) and facet counts.
-        b.HasIndex(x => new { x.Key, x.Value });
+        // Spec filters / facets look rows up by (Key, Value) and then need only ProductId: INCLUDE makes the index covering (no key lookups)
+        b.HasIndex(x => new { x.Key, x.Value }).IncludeProperties(x => x.ProductId);
         b.HasOne(x => x.Product).WithMany(x => x.Specifications).HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Cascade);
     }
 }

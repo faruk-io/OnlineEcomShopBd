@@ -46,6 +46,13 @@ services:
       Payments__StorefrontBaseUrl: http://localhost:4000
       Cors__AllowedOrigins__0: http://localhost:4000
       Storage__RootPath: /data/uploads
+      # The only client of this container is the `web` service (same compose network). Trust its X-Forwarded-For so per-client rate
+      # limits see real visitors instead of one shared address; Docker's default bridge networks live inside 172.16.0.0/12.
+      ForwardedHeaders__KnownNetworks__0: 172.16.0.0/12
+      ForwardedHeaders__KnownNetworks__1: 192.168.0.0/16
+      ForwardedHeaders__KnownNetworks__2: 10.0.0.0/8
+      # Plain HTTP inside the compose network; TLS (and the HTTP->HTTPS redirect) belongs to the reverse proxy in front of `web`.
+      Security__HttpsRedirection: "false"
     ports:
       - "127.0.0.1:5080:8080"
     volumes:

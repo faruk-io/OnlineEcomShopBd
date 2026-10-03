@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { appendForwardedFor, baseSecurityHeaders, bodyLimitFor, contentSecurityPolicy, inlineScriptHashes, isSafeUploadPath } from './server-security';
+import { appendForwardedFor, cacheControlForStatic, baseSecurityHeaders, bodyLimitFor, contentSecurityPolicy, inlineScriptHashes, isSafeUploadPath } from './server-security';
 
 const sha = (s: string) => `'sha256-${createHash('sha256').update(s, 'utf8').digest('base64')}'`;
 
@@ -91,4 +91,15 @@ describe('bodyLimitFor', () => {
     expect(bodyLimitFor('/api/v1/admin/uploads/images')).toBe('6mb');
     expect(bodyLimitFor('/api/v1/orders')).toBe('1mb');
   });
+});
+
+describe('cacheControlForStatic', () => {
+  it.each(['main-3KNJFOGF.js', 'styles-2C7T3UHH.css', 'chunk-CtiBeBEg.js', '/x/dist/browser/chunk-D3zB9pRJ.js', 'polyfills-5CFQRCPP.js', 'media/font-ABCDEF12.woff2'])(
+    'caches content-hashed %s for a year',
+    (f) => expect(cacheControlForStatic(f)).toBe('public, max-age=31536000, immutable'),
+  );
+  it.each(['favicon.svg', 'robots.txt', '/images/placeholders/processor.svg', 'images/brands/amd.svg', 'index.csr.html', 'main.js', 'a-b.js'])(
+    'revalidates the unhashed %s within the hour',
+    (f) => expect(cacheControlForStatic(f)).toBe('public, max-age=3600'),
+  );
 });

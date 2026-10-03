@@ -125,16 +125,24 @@ public static class ServiceCollectionExtensions
         {
             o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
             o.ForwardLimit = null;               // walk the chain from the right until the first untrusted hop
-            o.KnownNetworks.Clear();
-            o.KnownProxies.Clear();
-            foreach (var ip in cfg.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>() ?? [])
-                if (IPAddress.TryParse(ip, out var addr)) o.KnownProxies.Add(addr);
+
+            var proxies = (cfg.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>() ?? [])
+                .Select(ip => IPAddress.TryParse(ip, out var a) ? a : null).OfType<IPAddress>().ToList();
+            var networks = new List<Microsoft.AspNetCore.HttpOverrides.IPNetwork>();
             foreach (var net in cfg.GetSection("ForwardedHeaders:KnownNetworks").Get<string[]>() ?? [])
             {
                 var parts = net.Split('/');
                 if (parts.Length == 2 && IPAddress.TryParse(parts[0], out var prefix) && int.TryParse(parts[1], out var bits))
-                    o.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(prefix, bits));
+                    networks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(prefix, bits));
             }
+
+            // SECURITY: an EMPTY trust list means "trust every sender" to the middleware. So when nothing is configured we must keep the framework's
+            // default (loopback only) instead of clearing it; otherwise any client could spoof X-Forwarded-For and dodge the per-IP rate limits.
+            if (proxies.Count == 0 && networks.Count == 0) return;
+            o.KnownProxies.Clear();
+            o.KnownNetworks.Clear();
+            foreach (var p in proxies) o.KnownProxies.Add(p);
+            foreach (var n in networks) o.KnownNetworks.Add(n);
         });
         return services;
     }
