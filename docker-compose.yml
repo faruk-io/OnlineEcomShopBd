@@ -23,6 +23,16 @@ services:
       retries: 12
       start_period: 30s
 
+  # Local SMTP catcher + web inbox (development only). Nothing is ever delivered to real addresses.
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    environment:
+      MP_MAX_MESSAGES: "200"
+    ports:
+      - "127.0.0.1:8025:8025"   # web UI
+      - "127.0.0.1:1025:1025"   # SMTP
+
   api:
     build:
       context: ./backend
@@ -31,6 +41,8 @@ services:
     depends_on:
       sqlserver:
         condition: service_healthy
+      mailpit:
+        condition: service_started
     environment:
       # Development => appsettings.Development.json (Seed:Enabled/ApplyMigrations = true). Both are also set explicitly
       # below because Program.cs applies migrations and runs the (idempotent) seeder only when these flags are true.
@@ -53,6 +65,13 @@ services:
       ForwardedHeaders__KnownNetworks__2: 10.0.0.0/8
       # Plain HTTP inside the compose network; TLS (and the HTTP->HTTPS redirect) belongs to the reverse proxy in front of `web`.
       Security__HttpsRedirection: "false"
+      # Password-reset / verification links point at the storefront the browser uses.
+      Account__StorefrontBaseUrl: http://localhost:4000
+      # Local mail catcher (service `mailpit`): every email the API sends shows up at http://localhost:8025. Use a real SMTP relay elsewhere.
+      Email__Smtp__Host: mailpit
+      Email__Smtp__Port: "1025"
+      Email__Smtp__Security: None
+      Email__Smtp__FromAddress: no-reply@techbazar.local
     ports:
       - "127.0.0.1:5080:8080"
     volumes:

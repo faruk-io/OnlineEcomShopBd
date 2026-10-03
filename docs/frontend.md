@@ -13,6 +13,7 @@
 | `/checkout` | Checkout | browser | auth required; address, shipping, payment, coupon; server quote |
 | `/account/profile`, `/account/addresses`, `/account/orders`, `/account/orders/:number` | Account | browser | guarded; tracking timeline, cancel, pay again; `?payment=` banner |
 | `/builder`, `/builder?b=CODE` | PC Builder | SSR | server-evaluated compatibility, share link, add build to cart |
+| `/forgot-password`, `/reset-password#token=`, `/verify-email#token=` | Account recovery | browser | token comes from the URL fragment, held in memory, removed from the address bar |
 | `/admin/**` | Admin panel | browser | separate lazy shell behind `adminGuard` (+ server-side role checks) |
 
 ## Listing URL contract (shareable / SEO)

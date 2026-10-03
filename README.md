@@ -29,6 +29,19 @@ dotnet run --project src/TechBazar.Api          # Swagger: https://localhost:708
 Apply the new Phase 3 migration with the same `dotnet ef database update` (it is incremental; existing data is kept and the
 seeder adds the new CPU-cooler category/products). The admin account is `admin@techbazar.bd` with the `Seed:AdminPassword` you set.
 
+### Password reset & email verification
+Both flows email a one-time link (`/reset-password#token=…`, `/verify-email#token=…`). In development the emails are only logged (the full text,
+including the link, is at Debug level in the API console). With Docker, **Mailpit** catches them: open http://localhost:8025.
+For real delivery set SMTP (credentials as secrets, never in git):
+```bash
+dotnet user-secrets --project src/TechBazar.Api set "Email:Smtp:Host" "smtp.your-provider.com"
+dotnet user-secrets --project src/TechBazar.Api set "Email:Smtp:FromAddress" "no-reply@your-domain"
+dotnet user-secrets --project src/TechBazar.Api set "Email:Smtp:Username" "<user>"        # TLS is mandatory when a username is set
+dotnet user-secrets --project src/TechBazar.Api set "Email:Smtp:Password" "<password>"
+dotnet user-secrets --project src/TechBazar.Api set "Account:StorefrontBaseUrl" "https://www.your-domain"   # origin used in emailed links
+```
+Optional: `Account:RequireVerifiedEmailForCheckout=true` to require a verified address before ordering. Design and threat model: [`docs/security.md`](docs/security.md).
+
 ### Online payments (SSLCommerz sandbox)
 Cash on delivery works out of the box. To enable "Pay online", create a free sandbox store, then set
 `SslCommerz:StoreId`, `SslCommerz:StorePassword` (user-secrets) and `Payments:PublicApiBaseUrl` to a URL the gateway can reach
@@ -55,6 +68,7 @@ Register a customer on `/register`. The admin panel is at `/admin` (sign in as t
 cp .env.example .env            # then fill in the three secrets (commands are in the file; never commit .env)
 docker compose up --build       # SQL Server + API (migrates & seeds in Development) + storefront
 # storefront http://localhost:4000   API/Swagger http://localhost:5080/swagger   admin: admin@techbazar.bd / SEED_ADMIN_PASSWORD
+# emails (verification / password reset) are caught by Mailpit: http://localhost:8025
 ```
 Details, resetting the database and what is *not* production-ready: [`docs/docker.md`](docs/docker.md). The Docker images were written
 and validated statically here (`docker compose config`); there was no Docker daemon in the authoring sandbox, so run the first build yourself.
@@ -80,8 +94,8 @@ npm run e2e                                                  # browse > filter >
 
 ## Tests
 ```bash
-cd backend  && dotnet test                  # 338 unit + 143 integration (SQLite in-memory for tests only)
-cd frontend && npm test -- --watch=false    # 327 Vitest specs
-cd frontend && npm run e2e                  # 12 Playwright tests
+cd backend  && dotnet test                  # 398 unit + 165 integration (SQLite in-memory for tests only)
+cd frontend && npm test -- --watch=false    # 370 Vitest specs
+cd frontend && npm run e2e                  # 16 Playwright tests
 ```
 Screenshots of the storefront: [`docs/screenshots/`](docs/screenshots). Design notes: [`docs/frontend.md`](docs/frontend.md), [`docs/architecture.md`](docs/architecture.md).

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using TechBazar.Application.Abstractions;
 using TechBazar.Application.Auth;
 using TechBazar.Application.Email;
@@ -59,7 +60,13 @@ public static class DependencyInjection
         services.AddOptions<SslCommerzOptions>().Bind(configuration.GetSection(SslCommerzOptions.SectionName));
         services.AddOptions<StorageOptions>().Bind(configuration.GetSection(StorageOptions.SectionName));
 
-        services.AddSingleton<IEmailSender, LoggingEmailSender>();
+        // Real SMTP when Email:Smtp:Host is configured, otherwise the log-only sender (development). Validated at startup.
+        services.AddOptions<SmtpOptions>().Bind(configuration.GetSection(SmtpOptions.SectionName))
+            .Validate(SmtpOptions.IsValid, "Email:Smtp is incomplete or insecure: needs a valid FromAddress, a sane port/timeout, and TLS when a Username is set.")
+            .ValidateOnStart();
+        services.AddSingleton<IEmailSender>(sp => sp.GetRequiredService<IOptions<SmtpOptions>>().Value.IsConfigured
+            ? ActivatorUtilities.CreateInstance<SmtpEmailSender>(sp)
+            : ActivatorUtilities.CreateInstance<LoggingEmailSender>(sp));
         services.AddSingleton<IFileStorage, LocalFileStorage>();
         services.AddSingleton<IPaymentGateway, CashOnDeliveryGateway>();
         // The validation call carries store_passwd in its query string (SSLCommerz API design): never let the HTTP client log that URL.

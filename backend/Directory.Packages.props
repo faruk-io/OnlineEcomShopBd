@@ -4,6 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- Runtime -->
+    <PackageVersion Include="MailKit" Version="4.18.1" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="9.0.20" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.SqlServer" Version="9.0.20" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.20" />

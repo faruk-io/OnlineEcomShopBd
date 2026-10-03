@@ -146,6 +146,15 @@ erDiagram
         int Quantity
         decimal LineTotal
     }
+    AccountToken {
+        int Id PK
+        guid UserId FK
+        int Purpose "EmailVerification|PasswordReset"
+        string TokenHash UK "SHA-256, never the raw token"
+        string Email "normalised, bound at issue"
+        datetime ExpiresAt
+        datetime UsedAt "spent or superseded"
+    }
     OrderStatusHistory {
         int Id PK
         int OrderId FK

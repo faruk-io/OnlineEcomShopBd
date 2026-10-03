@@ -66,3 +66,7 @@ proxies `/api` and `/uploads` to the API, so the API need not be public. Then:
 * Uploads live on a local volume (single instance only); use object storage + CDN to scale out.
 * No TLS, no backups, no resource limits, no log shipping, images are not pinned by digest.
 * Images were validated statically; build them in CI before relying on them.
+
+## Mail (Mailpit)
+`mailpit` catches every email the API sends (verification, password reset, order mails): http://localhost:8025. Nothing leaves your machine.
+For a real relay set `Email__Smtp__Host/Port/Security/Username/Password/FromAddress` (use `StartTls`/`SslOnConnect`; a username without TLS is refused at startup).

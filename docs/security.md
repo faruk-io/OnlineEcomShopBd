@@ -25,6 +25,37 @@ write regression tests for each finding (so a fix cannot silently regress). Mapp
 | S15 | Info | A02 | Compression of token-bearing responses (BREACH class) | auth endpoints excluded from API and SSR compression | `ResponseSizeTests`, `SecurityApiTests` |
 | S16 | Info | A05 | `.gitignore` lacked key/cert patterns | `*.pfx *.p12 *.pem *.key *.crt secrets.json` | `git check-ignore` |
 
+## Phase 5: password reset and email verification
+
+Email is the root of trust for recovery, so the design assumes an attacker who can request resets for anyone and who may read server logs,
+the database, or a mail scanner's traffic.
+
+| Threat | Control | Proof |
+|---|---|---|
+| Guessing / brute-forcing a link | 256-bit random token (43 chars base64url), 1 h reset / 24 h verify lifetime | `AccountServiceTests` (expiry boundary, garbage tokens x8) |
+| Database or backup leak yields working links | only the SHA-256 is stored; the raw token exists in the email and the user's browser only | `OnlyTheHashOfATokenIsStored…` |
+| Replay / double use, concurrent use | single use through an atomic `UPDATE … WHERE UsedAt IS NULL AND ExpiresAt > now`; a newer request supersedes older links | `ATokenWorksExactlyOnce`, `ANewRequestSupersedesTheOlderLink` |
+| A verify link used to reset a password (or vice versa) | tokens are bound to a purpose | `ATokenIsBoundToItsPurpose…` (+ API test); mutation check: removing the check fails 2 tests |
+| Link outlives a change of address / deactivation | token stores the normalised email it was issued for; user must still be active | `ALinkDiesIf…` x2 |
+| **Host-header poisoning** (link points at the attacker's site) | links come from `Account:StorefrontBaseUrl` (or `Payments:StorefrontBaseUrl`), never from the request | `ResetLinks_AreBuiltFromConfiguration_NotFromTheHostHeader` (spoofed `Host`, `X-Forwarded-Host`, `Origin`, `Referer`) |
+| Token leaking via logs, proxies, `Referer`, analytics | token is in the URL **fragment** (never sent to servers); the page keeps it in memory only and strips it from the address bar; it is sent in a POST body | E2E asserts the fragment is gone; unit: no log line contains a token, address or password |
+| Link prefetchers / mail scanners spending the token | verification and reset are `POST`; a `GET` does nothing | `VerificationMustBeAPost…` |
+| **Account enumeration** | forgot-password always answers `202` with identical body and headers **and does identical work**: it only validates and enqueues, a background worker does the lookup/token/mail. Measured before the change: known address 15.2 ms vs unknown 5.2 ms (≈3x, a usable timing side channel); after: 2.73 vs 2.24 ms (0.5 ms, noise) | `ForgotPassword_AnswersIdentically…`; `…OnlyEnqueues…` asserts 0 SQL commands and no inline mail on the request path |
+| Inbox flooding / probing at scale | per-client `recovery` limit (5 / 15 min) + per-account cap (3 / hour, silently ignored beyond) + global limiter | `ForgotPassword_IsRateLimitedPerClient`, `ResetRequests_AreCappedPerAccountPerHour…` |
+| Weak password burning the link | the new password is validated **before** the token is spent | `AWeakPasswordIsRejectedWithoutSpendingTheToken` (unit + API) |
+| Stolen session survives a reset | reset revokes every refresh token, rotates the security stamp, clears lockout and the cookie; no auto-login | `ResetPassword_FullJourney_EndsEverySession…`, E2E second browser is signed out |
+| Silent takeover | "your password was changed" notice to the address | `Reset_SendsAPasswordChangedNotice` |
+| Credentials on the wire to the mail server | SMTP options refuse a username without TLS (fails at startup); recipient must be exactly one mailbox (no header injection); delivery errors never log the address or the server's reply | `SmtpEmailSenderTests` (real SMTP conversation against a fake server) |
+| Mail outage leaks info or breaks the flow | sender never throws into the request; indistinguishable from success | `AFailingMailServerNeverBreaksTheRequest…` |
+
+Bugs found by the tests while building this (all fixed): MimeKit accepts a bare `not-an-address` as a mailbox (strict shape check added);
+`BoundedChannelFullMode.DropWrite` makes `TryWrite` return `true` even when it drops the item (overflow was undetectable; now `Wait`);
+the first timing measurement above.
+
+Operational requirements: set `Email__Smtp__Host/FromAddress` (+ `Username`/`Password` as secrets) in production, otherwise mail is only logged
+(the API warns at startup); set `Account__StorefrontBaseUrl`; `Account__RequireVerifiedEmailForCheckout=true` makes verification mandatory to order
+(default off, so existing flows are unchanged). Reset links are single-use and expire; users can always request a new one.
+
 ## Checked and found sound (with evidence)
 - **SQL injection (A03)**: zero raw SQL (`FromSql*`/`ExecuteSql*` grep); EF parameterises everything; `LIKE` input is escaped (`TextSearch.Escape`, `%`/`_`/`[` tested). 14 hostile payloads (`'; DROP TABLE…`, `' OR '1'='1`, `WAITFOR`, `%`, `[a-z]`, 5 000 chars, …) x 10 endpoints never return 5xx or change data (`HostileInputNeverCausesServerErrors_OrChangesData`).
 - **XSS (A03)**: no `innerHTML`/`bypassSecurityTrust*`/`document.write` in the app (grep); JSON-LD escapes `<`; email HTML is encoded; Angular templates escape by default; CSP above is the backstop.
@@ -40,7 +71,9 @@ write regression tests for each finding (so a fix cannot silently regress). Mapp
 - Access tokens stay valid until they expire (15 min) after logout / deactivation: no per-request user lookup (would add a DB hit per call).
 - XSS cannot *steal* the refresh cookie, but script running in the page can still call `/auth/refresh` and act as the user while the page is open. The CSP is the control for that.
 - `style-src 'unsafe-inline'` (Angular component styles). Styles cannot execute script.
-- No email verification, password reset or MFA yet. Registration reveals whether an email exists (409); a locked account says so.
+- No MFA yet. Registration reveals whether an email exists (409); a locked account says so. Email is the root of trust for recovery: whoever controls the mailbox controls the account (standard for e-commerce; add MFA for admins before launch).
+- A reset link that was already used shows the password form first and only reports "invalid or expired" after submit (the page cannot know without a token-validity oracle; the token is 256-bit so one could be added safely, but it is not needed).
+- Pending "forgot password" jobs live in memory and are lost on shutdown (the user just asks again).
 - `AllowedHosts` is `*` (the API builds no URLs from the Host header; the SSR server enforces `allowedHosts`).
 - Admin edits (products, coupons) are not audit-logged; only order status changes keep who/when.
 - Search is `LIKE '%term%'` (index-unfriendly). Fine to ~100k products; use SQL Server full-text search beyond that.

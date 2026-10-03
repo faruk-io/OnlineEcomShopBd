@@ -59,6 +59,12 @@ anything. Application never references Identity, ASP.NET or a DB provider.
 - **Performance guardrails**: new read endpoints get a case in `QueryBudgetTests` (count must not grow with result size); aggregates run in SQL
   (see `DashboardService.DailySales/TopProducts`, whose SQL Server translation is asserted in `SqlServerTranslationTests`); read paths use
   `AsNoTracking`/projection. Index changes need a migration and a reason tied to a query (see `docs/performance.md`).
+- **Account recovery** (`IAccountService`/`AccountService`, table `AccountTokens`): tokens are 256-bit random, only the SHA-256 is stored, single use via
+  atomic `UPDATE … WHERE UsedAt IS NULL`, purpose- and email-bound. Links are built from **config** (`Account:StorefrontBaseUrl`), NEVER from the request
+  Host, with the token in the URL **fragment**. `forgot-password` must stay enumeration-safe: the controller only validates + enqueues (`IAccountJobs`),
+  the background worker does the work; a test asserts 0 SQL commands on that request path. Validate the new password BEFORE spending the token; a reset
+  revokes all sessions. Verification/reset are POST (never GET). Do not log tokens, addresses or passwords.
+- Email: `IEmailSender` is `SmtpEmailSender` (MailKit) when `Email:Smtp:Host` is set, else the log-only sender (the API warns in Production). SMTP refuses credentials without TLS; recipients must be exactly one mailbox. Dev inbox: Mailpit (compose, :8025).
 - Secrets (JWT key, admin password, connection strings with passwords) live in
   **user-secrets / env vars**, never in git. Tests inject config in-memory.
 - Spec attributes for the future PC Builder use canonical keys: `Socket`, `RAM Type`
@@ -150,10 +156,11 @@ SSR rejects unknown `Host` headers: add your domain(s) to `security.allowedHosts
 
 ## Roadmap
 Phase 1 (done): domain, migration, seed, catalog + auth APIs, tests, Angular scaffold.
+Phase 5 (done): password reset + email verification (`docs/security.md` Phase 5), SMTP sender, Mailpit dev inbox, optional verified-email checkout gate.
 Phase 4 (done): production hardening - OWASP review (`docs/security.md`: 16 findings fixed, each with a regression test), performance review
 (`docs/performance.md`), Playwright E2E, Dockerfiles + compose, GitHub Actions CI, ESLint + dotnet format gates.
 Phase 3 (done): checkout (addresses, shipping, coupons), orders + tracking + emails, COD + SSLCommerz sandbox, PC Builder with
 server-side compatibility, Admin panel (dashboard, product/category/brand/coupon CRUD, uploads, order status).
 Phase 2 (done): storefront (home, listing with URL-synced filters, product, compare, wishlist, cart with guest→server
 merge, auth, profile, order-history placeholder) + cart/wishlist/profile/onSale APIs.
-Next: reviews (write), admin user management, refunds via gateway API, bKash/Nagad direct, real SMTP sender, email verification + password reset, image resizing/CDN, full-text search.
+Next: reviews (write), admin user management, refunds via gateway API, bKash/Nagad direct, MFA (admins first), change-password/change-email in the account page, image resizing/CDN, full-text search.

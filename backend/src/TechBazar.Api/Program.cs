@@ -109,6 +109,10 @@ app.UseOutputCache();
 app.MapControllers();
 app.MapHealthChecks("/health").AllowAnonymous();
 
+if (app.Environment.IsProduction() && app.Services.GetRequiredService<TechBazar.Application.Email.IEmailSender>() is TechBazar.Infrastructure.Email.LoggingEmailSender)
+    app.Logger.LogWarning("Email:Smtp:Host is not configured: password-reset and verification emails are only logged, never delivered. " +
+                          "Configure SMTP (see docs/security.md and README) before going live.");
+
 if (app.Environment.IsProduction() && !app.Configuration.GetSection("ForwardedHeaders:KnownProxies").GetChildren().Any()
     && !app.Configuration.GetSection("ForwardedHeaders:KnownNetworks").GetChildren().Any())
     app.Logger.LogWarning("ForwardedHeaders:KnownProxies/KnownNetworks are not configured: behind a reverse proxy every client shares the proxy's IP, " +
