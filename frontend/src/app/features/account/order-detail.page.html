@@ -1,0 +1,124 @@
+<div class="wrap">
+  <app-breadcrumb [items]="[{ label: 'My account', link: ['/account'] }, { label: 'Orders', link: ['/account/orders'] }, { label: number() }]" />
+
+  @if (order.isLoading() && !o()) {
+    <p class="muted" role="status">Loading order…</p>
+  } @else if (error(); as e) {
+    <div class="panel">
+      <h1>{{ e.status === 404 ? 'Order not found' : 'Couldn’t load this order' }}</h1>
+      <p class="muted">{{ e.status === 404 ? 'We couldn’t find that order on your account.' : (e.detail ?? e.title) }}</p>
+      <a class="btn btn-primary" routerLink="/account/orders">Back to my orders</a>
+    </div>
+  } @else if (o(); as o) {
+    @if (placed()) {
+      <div class="alert alert-info" role="status">
+        <strong>Thank you! Your order {{ o.orderNumber }} has been placed.</strong>
+        A confirmation was sent to {{ o.contactEmail }}. You can follow its progress on this page.
+      </div>
+    }
+    @if (banner(); as b) { <div class="alert" [class.alert-error]="b.kind === 'bad'" [class.alert-info]="b.kind !== 'bad'" [class.okb]="b.kind === 'ok'" role="status">{{ b.text }}</div> }
+
+    <header class="head">
+      <div>
+        <h1>Order {{ o.orderNumber }}</h1>
+        <p class="muted">Placed {{ o.createdAt | date: 'd MMM y, h:mm a' }}</p>
+      </div>
+      <span class="badge" [class]="'badge ' + statusCls(o.status)">{{ status(o.status) }}</span>
+    </header>
+
+    <section class="panel" aria-labelledby="tl-h">
+      <h2 id="tl-h">Order tracking</h2>
+      <ol class="timeline">
+        @for (s of o.timeline; track s.status) {
+          <li [class.done]="s.done" [class.current]="s.current" [attr.aria-current]="s.current ? 'step' : null">
+            <span class="dot" aria-hidden="true">{{ s.done ? '✓' : '' }}</span>
+            <span class="txt">
+              <strong>{{ s.label }}</strong>
+              @if (s.reachedAt) { <span class="muted">{{ s.reachedAt | date: 'd MMM, h:mm a' }}</span> }
+              @else { <span class="muted">{{ s.current ? 'In progress' : 'Upcoming' }}</span> }
+            </span>
+          </li>
+        }
+      </ol>
+      @if (o.history.length) {
+        <details>
+          <summary>Status history</summary>
+          <ul class="history">
+            @for (h of o.history; track $index) {
+              <li><strong>{{ status(h.status) }}</strong> <span class="muted">{{ h.at | date: 'd MMM y, h:mm a' }}</span>@if (h.note) { <br /><span>{{ h.note }}</span> }</li>
+            }
+          </ul>
+        </details>
+      }
+    </section>
+
+    <div class="cols">
+      <section class="panel" aria-labelledby="it-h">
+        <h2 id="it-h">Items</h2>
+        <ul class="items">
+          @for (i of o.items; track i.productId) {
+            <li>
+              <img [src]="i.imageUrl || '/images/placeholder.svg'" alt="" width="56" height="56" loading="lazy" />
+              <span class="nm">
+                @if (i.slug) { <a [routerLink]="['/product', i.slug]">{{ i.name }}</a> } @else { {{ i.name }} }
+                <span class="muted">SKU {{ i.sku }} · {{ i.unitPrice | bdt }} × {{ i.quantity }}</span>
+              </span>
+              <span class="amt">{{ i.lineTotal | bdt }}</span>
+            </li>
+          }
+        </ul>
+        <dl>
+          <div><dt>Subtotal</dt><dd>{{ o.subtotal | bdt }}</dd></div>
+          @if (o.discountTotal > 0) { <div class="save"><dt>Discount{{ o.couponCode ? ' (' + o.couponCode + ')' : '' }}</dt><dd>-{{ o.discountTotal | bdt }}</dd></div> }
+          <div><dt>Delivery</dt><dd>{{ o.shippingFee ? (o.shippingFee | bdt) : 'Free' }}</dd></div>
+          <div class="grand"><dt>Total</dt><dd>{{ o.grandTotal | bdt }}</dd></div>
+        </dl>
+      </section>
+
+      <div class="side">
+        <section class="panel" aria-labelledby="dl-h">
+          <h2 id="dl-h">{{ o.pickup ? 'Store pickup' : 'Delivery' }}</h2>
+          <p class="muted">{{ shipping(o.shippingMethod) }}</p>
+          @if (o.pickup; as p) { <p><strong>{{ p.name }}</strong><br />{{ p.address }}</p> }
+          <p>
+            {{ o.shipTo.fullName }} · {{ o.shipTo.phone }}
+            @if (!o.pickup) {
+              <br />{{ o.shipTo.addressLine }}<br />{{ o.shipTo.upazila ? o.shipTo.upazila + ', ' : '' }}{{ o.shipTo.district }}, {{ o.shipTo.division }}{{ o.shipTo.postalCode ? ' ' + o.shipTo.postalCode : '' }}
+            }
+          </p>
+          @if (o.note) { <p class="muted">Note: {{ o.note }}</p> }
+        </section>
+
+        <section class="panel" aria-labelledby="pm-h">
+          <h2 id="pm-h">Payment</h2>
+          <p><strong>{{ method(o.paymentMethod) }}</strong> · <span [class.paid]="o.paymentStatus === 'Paid'">{{ payStatus(o.paymentStatus) }}</span></p>
+          @if (o.payments.length) {
+            <ul class="pays">
+              @for (p of o.payments; track $index) {
+                <li><span>{{ p.createdAt | date: 'd MMM, h:mm a' }}</span><span>{{ p.amount | bdt }}</span><span class="muted">{{ p.status }}@if (p.failureReason) { — {{ p.failureReason }} }</span></li>
+              }
+            </ul>
+          }
+          @if (o.canPay) { <button type="button" class="btn btn-accent btn-block" [disabled]="busy()" (click)="payNow()">{{ busy() ? 'Please wait…' : 'Pay now' }}</button> }
+        </section>
+
+        @if (actionError()) { <div class="alert alert-error" role="alert">{{ actionError() }}</div> }
+        @if (o.canCancel) {
+          @if (confirmingCancel()) {
+            <div class="panel confirm" role="alertdialog" aria-labelledby="cc-h">
+              <p id="cc-h"><strong>Cancel this order?</strong> Items go back to stock and any coupon is released.</p>
+              <div class="row">
+                <button type="button" class="btn btn-primary" [disabled]="busy()" (click)="cancel()">Yes, cancel order</button>
+                <button type="button" class="btn btn-outline" (click)="confirmingCancel.set(false)">Keep order</button>
+              </div>
+            </div>
+          } @else {
+            <button type="button" class="btn btn-outline btn-block" (click)="confirmingCancel.set(true)">Cancel order</button>
+          }
+        } @else if (o.status === 'Processing' || o.status === 'Shipped') {
+          <p class="hint">This order is already being prepared. Contact support if you need to change it.</p>
+        }
+      </div>
+    </div>
+  }
+</div>

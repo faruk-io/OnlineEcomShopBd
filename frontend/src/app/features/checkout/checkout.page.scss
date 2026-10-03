@@ -1,0 +1,30 @@
+h1 { margin: 1rem 0; }
+h2 { font-size: 1.05rem; margin: 0 0 .75rem; display: flex; align-items: center; gap: .5rem; }
+.n { width: 1.6rem; height: 1.6rem; border-radius: 50%; background: var(--primary); color: #fff; display: inline-grid; place-items: center; font-size: .85rem; }
+.layout { display: grid; gap: 1rem; align-items: start; }
+.steps { display: grid; gap: 1rem; }
+@media (min-width: 960px) { .layout { grid-template-columns: 1fr 24rem; } .summary { position: sticky; top: calc(var(--header-h) + 1rem); } }
+.choices, .addresses { display: grid; gap: .5rem; list-style: none; margin: 0 0 .75rem; padding: 0; }
+.choice { display: flex; gap: .65rem; align-items: flex-start; border: 1px solid var(--border); border-radius: var(--radius); padding: .7rem .85rem; cursor: pointer; }
+.choice > span { display: grid; gap: .1rem; }
+.choice.on { border-color: var(--primary); background: var(--primary-weak); }
+.choice.off { opacity: .6; cursor: not-allowed; }
+.choice:focus-within { box-shadow: var(--focus); }
+.tag { font-size: .72rem; font-weight: 700; color: var(--primary-strong); margin-left: .35rem; }
+.coupon { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: .5rem; }
+.coupon .input { flex: 1 1 12rem; }
+.ok { color: var(--success); font-weight: 600; margin: 0 0 1rem; }
+.lines { list-style: none; margin: 0 0 .75rem; padding: 0; display: grid; gap: .5rem; max-height: 18rem; overflow: auto; }
+.lines li { display: grid; grid-template-columns: 48px 1fr auto; gap: .6rem; align-items: center; font-size: .9rem; }
+.lines img { border-radius: 6px; object-fit: cover; background: var(--surface-2); }
+.prob { display: block; }
+.amt { font-weight: 600; }
+dl { margin: 0 0 1rem; display: grid; gap: .4rem; }
+dl > div { display: flex; justify-content: space-between; gap: 1rem; }
+dt { color: var(--muted); } dd { margin: 0; font-weight: 600; }
+.save dd { color: var(--success); }
+.grand { border-top: 1px solid var(--border); padding-top: .6rem; font-size: 1.15rem; }
+.grand dt { color: var(--text); font-weight: 700; } .grand dd { color: var(--price); font-weight: 800; }
+.empty { display: grid; justify-items: center; gap: .5rem; padding: 3rem 1rem; text-align: center; }
+.summary .btn { margin: .5rem 0; }
+textarea.input { resize: vertical; }

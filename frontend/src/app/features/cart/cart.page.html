@@ -40,10 +40,10 @@
           <div class="grand"><dt>Total</dt><dd>{{ cart.subtotal() | bdt }}</dd></div>
         </dl>
         @if (auth.isAuthenticated()) {
-          <button type="button" class="btn btn-primary btn-block" disabled aria-describedby="co-note">Proceed to checkout</button>
-          <p id="co-note" class="hint">Checkout and online payments (bKash, Nagad, cards, cash on delivery) arrive in the next release. Your cart is saved to your account.</p>
+          <a class="btn btn-primary btn-block" routerLink="/checkout" [attr.aria-disabled]="cart.subtotal() === 0">Proceed to checkout</a>
+          <p class="hint">Delivery charge, coupons and payment method are chosen at checkout. Your cart is saved to your account.</p>
         } @else {
-          <a class="btn btn-primary btn-block" routerLink="/login" [queryParams]="{ returnUrl: '/cart' }">Sign in to checkout</a>
+          <a class="btn btn-primary btn-block" routerLink="/login" [queryParams]="{ returnUrl: '/checkout' }">Sign in to checkout</a>
           <p class="hint">Your cart is stored on this device. When you sign in or register it is merged into your account cart automatically.</p>
         }
         <a class="btn btn-outline btn-block" routerLink="/shop">Continue shopping</a>

@@ -146,6 +146,39 @@ erDiagram
         int Quantity
         decimal LineTotal
     }
+    OrderStatusHistory {
+        int Id PK
+        int OrderId FK
+        int Status
+        string Note
+        guid ChangedByUserId
+        datetime CreatedAt
+    }
+    Payment {
+        int Id PK
+        int OrderId FK
+        string TransactionId UK "<orderNo>-<attempt>"
+        string Gateway "cod|sslcommerz"
+        int Method
+        decimal Amount
+        int Status "Pending|Paid|Failed|Cancelled|Refunded"
+        string GatewayReference
+        int Version "optimistic concurrency"
+        datetime PaidAt
+    }
+    PcBuild {
+        int Id PK
+        string Code UK "share code"
+        guid UserId "nullable"
+        string Name
+    }
+    PcBuildItem {
+        int Id PK
+        int PcBuildId FK
+        int ProductId FK
+        int Slot
+        int Quantity
+    }
     RefreshToken {
         int Id PK
         guid UserId FK
@@ -155,6 +188,10 @@ erDiagram
         string ReplacedByTokenHash
     }
 ```
+
+Relationships added in Phase 3: `Order 1—* OrderStatusHistory`, `Order 1—* Payment`, `PcBuild 1—* PcBuildItem *—1 Product`.
+`Order` also stores `ShippingMethod`, `ContactEmail` and the shipping-address snapshot; `OrderItem.StockDecremented` makes restocking exact.
+`Product` and `Coupon` have an int `Version` for optimistic concurrency.
 
 ## Notes
 - **Soft delete**: a global query filter hides `IsDeleted` rows; `DbContext.SaveChangesAsync` converts deletes to updates.

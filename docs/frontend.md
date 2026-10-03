@@ -10,7 +10,10 @@
 | `/compare` | Compare | SSR | up to 4 products, "differences only" |
 | `/wishlist`, `/cart` | Wishlist, Cart | browser | guest data lives in localStorage |
 | `/login`, `/register` | Auth | browser | `returnUrl` is validated (no open redirects) |
-| `/account/profile`, `/account/orders` | Account | browser | guarded; orders is a placeholder |
+| `/checkout` | Checkout | browser | auth required; address, shipping, payment, coupon; server quote |
+| `/account/profile`, `/account/addresses`, `/account/orders`, `/account/orders/:number` | Account | browser | guarded; tracking timeline, cancel, pay again; `?payment=` banner |
+| `/builder`, `/builder?b=CODE` | PC Builder | SSR | server-evaluated compatibility, share link, add build to cart |
+| `/admin/**` | Admin panel | browser | separate lazy shell behind `adminGuard` (+ server-side role checks) |
 
 ## Listing URL contract (shareable / SEO)
 `/category/processor?brand=intel&brand=amd&minPrice=10000&maxPrice=60000&inStock=true&onSale=true&spec=Socket:LGA1700&sort=price_asc&page=2`
@@ -57,8 +60,8 @@ forms link errors with `aria-describedby`/`aria-invalid`; tables use `caption` +
   401, logout, route guard, 404 status, no horizontal overflow on a 390 px viewport. Screenshots: `docs/screenshots/`.
 
 ## Known gaps
-* Checkout / orders / payments are not built (cart shows a disabled button; order history is a placeholder).
-* Product images are generated SVG placeholders (`public/images`); wire your CDN/uploads when admin CRUD exists.
+* Online payments need SSLCommerz sandbox credentials (not available in CI); the gateway is covered by fake-HTTP tests.
+* Seed product images are generated SVG placeholders; admin uploads are stored on local disk (`Storage:RootPath`) — use blob storage + CDN to scale out.
 * Reviews are display-only (no write endpoint yet); product data has none, so ratings show "No reviews yet".
 * Facet counts are per category (not recomputed for the currently selected filters).
 * The refresh token is in `localStorage`; move it to an `HttpOnly; Secure; SameSite` cookie (API + server.ts proxy) before production.

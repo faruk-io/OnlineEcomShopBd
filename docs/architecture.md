@@ -58,3 +58,29 @@ Authorization → OutputCache → Controllers (ValidationFilter → action)`
 - Tests use SQLite in-memory: `ApplicationDbContext` maps `decimal` → `double` **only** when the provider is SQLite
   (SQLite cannot ORDER BY decimals). `SqlServerTranslationTests` compiles the catalog queries with the SQL Server provider
   so provider-specific regressions are still caught.
+
+## Checkout, orders and payments (Phase 3)
+```
+cart ──► POST /checkout/quote ──► OrderCalculator (prices from DB, coupon, ShippingRules) ──► totals
+      └► POST /orders ──► CheckoutService.PlaceAsync: re-validate stock, re-price, decrement stock, use coupon (version-checked),
+                          snapshot lines/address, history row, Payment attempt, email ──► (online) gateway redirect URL
+gateway ──► POST /payments/sslcommerz/ipn|success|fail|cancel ──► PaymentService.HandleCallbackAsync
+                          verify (md5 verify_sign + validation API) → amount/currency == Payment.Amount → mark Paid once → confirm order
+```
+* **Order states** (`OrderStateMachine`): Pending → Confirmed → Processing → Shipped → Delivered (pickup: … → ReadyForPickup → Delivered);
+  Cancelled / Returned release stock and the coupon use and flag refunds for paid orders. Illegal moves → 409.
+* **Idempotency**: `Payment` rows carry a unique `TransactionId` (`<order>-<attempt>`) and a `Version`; a replayed or racing
+  callback finds the row already `Paid` (or loses the concurrency check) and returns "already processed". A `Paid` row is never downgraded.
+* **COD** is settled automatically when the order is delivered / collected. Admins can also *Mark paid* (bank transfer etc.).
+* **Shipping**: inside Dhaka ৳70, outside ৳130, store pickup ৳0 (`Shipping:*` config).
+
+## PC Builder
+`BuildCompatibilityChecker` (pure) receives parts with their spec rows and returns errors / warnings / info plus per-slot spec filters
+used by the UI to list compatible parts only. Rules: CPU socket = motherboard socket; RAM type (DDR4/DDR5) = motherboard, form
+factor, module count ≤ slots, capacity ≤ max; M.2 and SATA counts; case fits board form factor, GPU length, cooler height; cooler
+socket support and TDP rating; CPU without iGPU needs a GPU; **PSU wattage ≥ estimated system power × 1.3** (CPU TDP + GPU TDP +
+platform allowance). Saved builds get a short code (`/builder?b=CODE`).
+
+## Admin
+`/api/v1/admin/*` requires the `Admin` role. Dashboard aggregates are computed in memory from the last N days of orders (fine for a
+single store; move to SQL views / a read model if volumes grow). Product writes bump `Version` and evict the `catalog` output-cache tag.

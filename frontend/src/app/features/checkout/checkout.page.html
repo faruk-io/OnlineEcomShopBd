@@ -1,0 +1,149 @@
+<div class="container section">
+  <app-breadcrumb [items]="[{ label: 'Cart', link: ['/cart'] }, { label: 'Checkout' }]" />
+  <h1>Checkout</h1>
+
+  @if (cart.lines().length === 0) {
+    <div class="panel empty">
+      <h2>Your cart is empty</h2>
+      <p class="muted">Add something to your cart before checking out.</p>
+      <a class="btn btn-primary" routerLink="/shop">Start shopping</a>
+    </div>
+  } @else {
+    <div class="layout">
+      <div class="steps">
+        <!-- 1. delivery method -->
+        <section class="panel" aria-labelledby="s1">
+          <h2 id="s1"><span class="n">1</span> Delivery method</h2>
+          <div class="choices" role="radiogroup" aria-labelledby="s1">
+            <label class="choice" [class.on]="mode() === 'home'">
+              <input type="radio" name="mode" value="home" [checked]="mode() === 'home'" (change)="mode.set('home')" />
+              <span>
+                <strong>Home delivery</strong>
+                <span class="muted">
+                  @if (homeOption(); as h) { {{ h.label }} · {{ h.fee | bdt }} } @else { Inside Dhaka ৳70 · Outside Dhaka ৳130 }
+                </span>
+              </span>
+            </label>
+            <label class="choice" [class.on]="mode() === 'pickup'">
+              <input type="radio" name="mode" value="pickup" [checked]="mode() === 'pickup'" (change)="mode.set('pickup')" />
+              <span>
+                <strong>Store pickup</strong>
+                <span class="muted">{{ pickupOption()?.fee ?? 0 | bdt }} · collect from {{ store()?.name ?? 'our store' }}</span>
+              </span>
+            </label>
+          </div>
+        </section>
+
+        <!-- 2. address or pickup contact -->
+        @if (mode() === 'home') {
+          <section class="panel" aria-labelledby="s2">
+            <h2 id="s2"><span class="n">2</span> Delivery address</h2>
+            @if (addresses.isLoading() && !addresses.hasValue()) { <p class="muted" role="status">Loading your addresses…</p> }
+            @if (addressList().length) {
+              <ul class="addresses" role="radiogroup" aria-labelledby="s2">
+                @for (a of addressList(); track a.id) {
+                  <li>
+                    <label class="choice" [class.on]="addressId() === a.id">
+                      <input type="radio" name="address" [value]="a.id" [checked]="addressId() === a.id" (change)="addressId.set(a.id)" />
+                      <span>
+                        <strong>{{ a.label }} @if (a.isDefault) { <span class="tag">Default</span> }</strong>
+                        <span>{{ a.fullName }} · {{ a.phone }}</span>
+                        <span class="muted">{{ a.addressLine }}, {{ a.upazila ? a.upazila + ', ' : '' }}{{ a.district }}, {{ a.division }}</span>
+                      </span>
+                    </label>
+                  </li>
+                }
+              </ul>
+            }
+            @if (addingAddress()) {
+              <app-address-form [divisions]="divisions()" [defaultChecked]="addressList().length === 0" (saved)="onAddressSaved($event)" (cancelled)="addingAddress.set(false)" />
+            } @else {
+              <button type="button" class="btn btn-outline btn-sm" (click)="addingAddress.set(true)">+ Add a new address</button>
+            }
+          </section>
+        } @else {
+          <section class="panel" aria-labelledby="s2">
+            <h2 id="s2"><span class="n">2</span> Who is collecting?</h2>
+            @if (store(); as s) { <p class="muted">Pick up at <strong>{{ s.name }}</strong>, {{ s.address }}. We’ll tell you when it’s ready.</p> }
+            <div class="field">
+              <label for="cname">Full name</label>
+              <input id="cname" class="input" autocomplete="name" [ngModel]="contactName()" (ngModelChange)="contactName.set($event)" [attr.aria-invalid]="submitted() && !contactName().trim()" />
+              @if (submitted() && !contactName().trim()) { <span class="error-text">Enter the name of the person collecting.</span> }
+            </div>
+            <div class="field">
+              <label for="cphone">Mobile number</label>
+              <input id="cphone" class="input" type="tel" inputmode="tel" autocomplete="tel" [ngModel]="contactPhone()" (ngModelChange)="contactPhone.set($event)" [attr.aria-invalid]="submitted() && !pickupValid()" />
+              @if (submitted() && !contactPhone().trim()) { <span class="error-text">Enter a mobile number.</span> }
+              @else if (submitted() && !pickupValid()) { <span class="error-text">Enter a valid Bangladeshi mobile number, e.g. 01712345678.</span> }
+              @else { <span class="hint">e.g. 01712345678</span> }
+            </div>
+          </section>
+        }
+
+        <!-- 3. payment -->
+        <section class="panel" aria-labelledby="s3">
+          <h2 id="s3"><span class="n">3</span> Payment method</h2>
+          <div class="choices" role="radiogroup" aria-labelledby="s3">
+            @for (p of options.hasValue() ? options.value()!.payment : []; track p.method) {
+              <label class="choice" [class.on]="payment() === p.method" [class.off]="!p.enabled">
+                <input type="radio" name="payment" [value]="p.method" [checked]="payment() === p.method" [disabled]="!p.enabled" (change)="payment.set(p.method)" />
+                <span><strong>{{ p.label }}</strong><span class="muted">{{ p.description }}</span></span>
+              </label>
+            }
+          </div>
+        </section>
+
+        <!-- 4. coupon & note -->
+        <section class="panel" aria-labelledby="s4">
+          <h2 id="s4"><span class="n">4</span> Coupon &amp; notes</h2>
+          <form class="coupon" (submit)="$event.preventDefault(); applyCoupon()">
+            <label class="visually-hidden" for="coupon">Coupon code</label>
+            <input id="coupon" class="input" placeholder="Coupon code" autocomplete="off" [ngModel]="couponInput()" (ngModelChange)="couponInput.set($event)" [ngModelOptions]="{ standalone: true }" />
+            <button type="submit" class="btn btn-outline" [disabled]="!couponInput().trim()">Apply</button>
+            @if (couponCode()) { <button type="button" class="btn btn-ghost" (click)="removeCoupon()">Remove</button> }
+          </form>
+          @if (couponCode() && q(); as qq) {
+            @if (qq.couponApplied) { <p class="ok" role="status">Coupon {{ qq.couponCode }} applied — you save {{ qq.discount | bdt }}.</p> }
+            @else { <p class="error-text" role="alert">{{ qq.couponMessage ?? 'This coupon can’t be applied.' }}</p> }
+          }
+          <div class="field">
+            <label for="note">Order note <span class="muted">(optional)</span></label>
+            <textarea id="note" class="input" rows="2" maxlength="500" [ngModel]="note()" (ngModelChange)="note.set($event)" [ngModelOptions]="{ standalone: true }"></textarea>
+          </div>
+        </section>
+      </div>
+
+      <!-- summary -->
+      <aside class="summary panel" aria-labelledby="sum-h">
+        <h2 id="sum-h">Order summary</h2>
+        @if (q(); as qq) {
+          <ul class="lines">
+            @for (l of qq.lines; track l.productId) {
+              <li [class.bad]="l.problem">
+                <img [src]="l.imageUrl || '/images/placeholder.svg'" alt="" width="48" height="48" loading="lazy" />
+                <span class="nm">{{ l.name }} <span class="muted">× {{ l.quantity }}</span>@if (l.problem) { <span class="error-text prob">{{ l.problem }}</span> }</span>
+                <span class="amt">{{ l.lineTotal | bdt }}</span>
+              </li>
+            }
+          </ul>
+          <dl>
+            <div><dt>Subtotal</dt><dd>{{ qq.subtotal | bdt }}</dd></div>
+            @if (qq.discount > 0) { <div class="save"><dt>Discount ({{ qq.couponCode }})</dt><dd>-{{ qq.discount | bdt }}</dd></div> }
+            <div><dt>Delivery</dt><dd>{{ qq.shippingFee ? (qq.shippingFee | bdt) : 'Free' }}</dd></div>
+            <div class="grand"><dt>Total</dt><dd aria-live="polite">{{ qq.grandTotal | bdt }}</dd></div>
+          </dl>
+          @for (p of qq.problems; track p) { <p class="error-text" role="alert">{{ p }}</p> }
+        } @else if (quote.isLoading()) {
+          <p class="muted" role="status">Calculating your total…</p>
+        } @else {
+          <p class="muted">Choose a delivery address to see your total.</p>
+        }
+        @if (formError()) { <div class="alert alert-error" role="alert">{{ formError() }}</div> }
+        <button type="button" class="btn btn-primary btn-block" [disabled]="!canPlace()" (click)="place()">
+          {{ busy() ? 'Placing order…' : payment() === 'Online' ? 'Place order & pay online' : 'Place order' }}
+        </button>
+        <p class="hint">The total is calculated by our server from current prices; it can’t be changed from your browser.</p>
+      </aside>
+    </div>
+  }
+</div>

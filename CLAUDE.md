@@ -49,6 +49,21 @@ anything. Application never references Identity, ASP.NET or a DB provider.
   **user-secrets / env vars**, never in git. Tests inject config in-memory.
 - Spec attributes for the future PC Builder use canonical keys: `Socket`, `RAM Type`
   (`DDR4`/`DDR5`), `TDP` (W, CPU/GPU), `Wattage` (PSU), `Form Factor`.
+- **Totals are server-only.** Cart/checkout/builder prices are recomputed from the database on every request
+  (`OrderCalculator`, `ShippingRules`); request bodies carry choices (ids, method, coupon code), never amounts.
+  Home-delivery zone comes from the *address district* (`Dhaka` = inside), not from the client's method choice.
+- Pure business rules live in Application as static classes with exhaustive unit tests: `OrderCalculator`, `ShippingRules`,
+  `OrderStateMachine`, `BuildCompatibilityChecker`, `SpecRules`. Status changes go through `IOrderFulfilment.TransitionAsync`
+  (state machine, stock release, coupon release, refund flag, history row, email).
+- Payments: `IPaymentGateway` (`cod`, `sslcommerz`). Callbacks (`/api/v1/payments/{gateway}/success|fail|cancel|ipn`) are anonymous,
+  re-verified by the gateway (signature + validation API), amount/currency checked against the `Payment` row, and processed
+  idempotently (`Payment.Version` optimistic concurrency; replays return 200 "already processed"). Never trust browser redirects.
+- Optimistic concurrency uses an int `Version` (`IVersioned`: Product, Coupon, Payment) bumped in `SaveChangesAsync`; stock/coupon
+  writers retry on `DbUpdateConcurrencyException`.
+- Admin API is `/api/v1/admin/*`, policy `AdminOnly` (401 anonymous, 403 customer). Uploads: content-sniffed (`ImageSniffer`,
+  PNG/JPEG/GIF/WebP, no SVG), GUID file names, stored by `IFileStorage` under `Storage:RootPath`, served at `/uploads`.
+- Email goes through `IEmailSender` (dev: `LoggingEmailSender`). Sending must never fail an order.
+- Seeder is additive: it adds missing categories/brands/products/coupons and never overwrites admin edits or resurrects deletions.
 - Small logical commits, imperative messages. PR only when asked.
 
 ### Frontend conventions (`/frontend/src/app`)
@@ -71,6 +86,11 @@ anything. Application never references Identity, ASP.NET or a DB provider.
   state → use `apiErrorOf` / `safeValue` (`core/util/resource.ts`); user-specific pages are `RenderMode.Client`.
 - SEO: set per-page meta with `SeoService.set()` (title, description, canonical, robots, JSON-LD). Filtered / searched
   listings are `noindex,follow`. Unknown product/category pages call `setStatus(404)`.
+- Phase 3 pages: `features/checkout` (quote from `/checkout/quote`; place → COD goes to tracking, online `Redirector.to(url)` to the
+  gateway), `features/account/{addresses,orders,order-detail}` (tracking timeline comes from the API), `features/builder`
+  (server evaluates every change; share link `/builder?b=CODE`), `features/admin` (own lazy shell behind `adminGuard`; every admin
+  call is also enforced server-side). Gateway return lands on `/account/orders/:number?payment=success|failed|cancelled|pending`.
+- `/api` **and `/uploads`** are proxied to the API (`proxy.conf.json`, `src/server.ts`).
 - Tests: Vitest via `ng test` (jsdom). Fake only the timers you need (`vi.useFakeTimers({ toFake: [...] })`) because
   faking `setTimeout` freezes Angular's zoneless scheduler; never `await fixture.whenStable()` while an HTTP request you
   must flush is pending.
@@ -82,6 +102,10 @@ dotnet restore && dotnet build
 dotnet test
 dotnet user-secrets --project src/TechBazar.Api set "Jwt:Key" "<>=32 random chars>"
 dotnet user-secrets --project src/TechBazar.Api set "Seed:AdminPassword" "<strong pw>"
+# optional SSLCommerz sandbox (https://developer.sslcommerz.com/registration/): never commit these
+dotnet user-secrets --project src/TechBazar.Api set "SslCommerz:StoreId" "<sandbox store id>"
+dotnet user-secrets --project src/TechBazar.Api set "SslCommerz:StorePassword" "<sandbox store password>"
+dotnet user-secrets --project src/TechBazar.Api set "Payments:PublicApiBaseUrl" "https://<public tunnel to the API>"
 dotnet ef migrations add <Name> -p src/TechBazar.Infrastructure -s src/TechBazar.Api -o Persistence/Migrations
 dotnet ef database update      -p src/TechBazar.Infrastructure -s src/TechBazar.Api
 dotnet run --project src/TechBazar.Api      # https://localhost:7080 / http://localhost:5080, Swagger at /swagger
@@ -104,7 +128,8 @@ SSR rejects unknown `Host` headers: add your domain(s) to `security.allowedHosts
 
 ## Roadmap
 Phase 1 (done): domain, migration, seed, catalog + auth APIs, tests, Angular scaffold.
+Phase 3 (done): checkout (addresses, shipping, coupons), orders + tracking + emails, COD + SSLCommerz sandbox, PC Builder with
+server-side compatibility, Admin panel (dashboard, product/category/brand/coupon CRUD, uploads, order status).
 Phase 2 (done): storefront (home, listing with URL-synced filters, product, compare, wishlist, cart with guest→server
 merge, auth, profile, order-history placeholder) + cart/wishlist/profile/onSale APIs.
-Next: checkout + orders + payments (bKash/Nagad/COD), coupons in cart, reviews (write), admin CRUD, PC Builder
-compatibility engine, order tracking.
+Next: reviews (write), admin user management, refunds via gateway API, bKash/Nagad direct, HttpOnly refresh cookie, real SMTP sender.

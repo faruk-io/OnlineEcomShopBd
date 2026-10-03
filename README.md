@@ -26,6 +26,16 @@ dotnet ef database update -p src/TechBazar.Infrastructure -s src/TechBazar.Api
 # 4. run (seeds categories, brands, 66 products, coupons on first start)
 dotnet run --project src/TechBazar.Api          # Swagger: https://localhost:7080/swagger
 ```
+Apply the new Phase 3 migration with the same `dotnet ef database update` (it is incremental; existing data is kept and the
+seeder adds the new CPU-cooler category/products). The admin account is `admin@techbazar.bd` with the `Seed:AdminPassword` you set.
+
+### Online payments (SSLCommerz sandbox)
+Cash on delivery works out of the box. To enable "Pay online", create a free sandbox store, then set
+`SslCommerz:StoreId`, `SslCommerz:StorePassword` (user-secrets) and `Payments:PublicApiBaseUrl` to a URL the gateway can reach
+(e.g. an ngrok tunnel to the API: SSLCommerz POSTs `/api/v1/payments/sslcommerz/ipn|success|fail|cancel` there). Set the
+IPN URL in the sandbox merchant panel to `<PublicApiBaseUrl>/api/v1/payments/sslcommerz/ipn`. Without credentials the online
+option is shown as unavailable. Emails are log-only in development (`IEmailSender`, see the API console).
+
 Connect SSMS to the same server, database **TechBazarBD**. Tables: `Products`, `Categories`, `ProductSpecifications`,
 `Users`, `Roles`, `RefreshTokens`, ...
 
@@ -38,11 +48,11 @@ npm start                                   # http://localhost:4200  (dev server
 # or the production/SSR build
 npm run build && API_URL=http://localhost:5080 npm run serve:ssr:techbazar-web   # http://localhost:4000
 ```
-Seeded admin/customer accounts are not required to browse; register a customer on `/register`.
+Register a customer on `/register`. The admin panel is at `/admin` (sign in as the seeded admin). PC Builder: `/builder`.
 
 ## Tests
 ```bash
-cd backend  && dotnet test                  # 96 unit + 48 integration (SQLite in-memory for tests only)
+cd backend  && dotnet test                  # 320 unit + 79 integration (SQLite in-memory for tests only)
 cd frontend && npm test -- --watch=false    # 187 Vitest specs
 ```
 Screenshots of the storefront: [`docs/screenshots/`](docs/screenshots). Design notes: [`docs/frontend.md`](docs/frontend.md).

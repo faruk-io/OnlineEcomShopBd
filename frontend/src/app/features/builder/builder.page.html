@@ -1,0 +1,169 @@
+<div class="container section">
+  <app-breadcrumb [items]="[{ label: 'PC Builder' }]" />
+
+  <header class="head">
+    <h1>PC Builder</h1>
+    <p class="muted">
+      Pick your parts slot by slot. We check that they fit together, estimate the power you need and price the whole build in ৳.
+      Prices and compatibility are always confirmed by our system.
+    </p>
+  </header>
+
+  @if (sharedNotice(); as n) {
+    <div class="alert alert-info" role="status">{{ n }}</div>
+  }
+  @if (slotsError(); as e) {
+    <div class="alert alert-error" role="alert">{{ e }}</div>
+  }
+
+  <div class="layout">
+    <section aria-labelledby="parts-h">
+      <h2 id="parts-h" class="visually-hidden">Parts</h2>
+      <ul class="rows">
+        @for (row of rows(); track row.slot.slot) {
+          <li class="row panel" [class.err]="row.state === 'error'" [class.wrn]="row.state === 'warn'" [attr.data-slot]="row.slot.slot">
+            <div class="row-head">
+              <h3>
+                {{ row.slot.label }}
+                @if (row.slot.required) { <span class="req">Required</span> } @else { <span class="opt">Optional</span> }
+                @if (row.state === 'error') { <span class="flag flag-err"><app-icon name="alert" [size]="14" /> Problem</span> }
+                @else if (row.state === 'warn') { <span class="flag flag-warn"><app-icon name="alert" [size]="14" /> Check</span> }
+              </h3>
+              <button type="button" class="btn btn-sm" [class.btn-primary]="!row.parts.length" [class.btn-outline]="row.parts.length" [id]="'choose-' + row.slot.slot" (click)="openPicker(row.slot)">
+                @if (!row.parts.length) { Choose }
+                @else if (row.slot.allowMultiple) { <app-icon name="plus" [size]="14" /> Add another }
+                @else { Change }
+                <span class="visually-hidden"> {{ row.slot.label }}</span>
+              </button>
+            </div>
+
+            @for (part of row.parts; track part.item.productId) {
+              <div class="part" [class.gone]="part.line && !part.line.purchasable">
+                <img [src]="part.line?.imageUrl || '/images/placeholder.svg'" alt="" width="56" height="56" loading="lazy" />
+                <div class="info">
+                  @if (part.line; as l) {
+                    <a class="name" [routerLink]="['/product', l.slug]" target="_blank">{{ l.name }}</a>
+                    <span class="muted meta">{{ l.brandName }} · {{ l.sku }}</span>
+                    <span class="line">
+                      <strong>{{ l.unitPrice | bdt }}</strong>
+                      @if (l.unitPrice < l.listPrice) { <del class="muted">{{ l.listPrice | bdt }}</del> }
+                      <app-stock-badge [status]="l.stockStatus" />
+                    </span>
+                    @if (!l.purchasable) { <span class="warn">Unavailable to buy right now: it will be left out of your cart.</span> }
+                  } @else {
+                    <span class="name">Part #{{ part.item.productId }}</span>
+                    <span class="muted meta">Loading details…</span>
+                  }
+                </div>
+                <div class="ctrl">
+                  @if (row.slot.allowMultiple) {
+                    <app-quantity-input [value]="part.item.quantity ?? 1" [max]="maxQty" [label]="part.line?.name ?? row.slot.label" (valueChange)="changeQty(row.slot, part.item.productId, $event)" />
+                  }
+                  @if (part.line) { <span class="lt">{{ part.line.lineTotal | bdt }}</span> }
+                  <button type="button" class="rm" (click)="remove(row.slot, part.item.productId)" [attr.aria-label]="'Remove ' + (part.line?.name ?? row.slot.label)">
+                    <app-icon name="trash" [size]="18" />
+                  </button>
+                </div>
+              </div>
+            }
+          </li>
+        } @empty {
+          @if (!slotsError()) { <li class="muted">Loading parts list…</li> }
+        }
+      </ul>
+    </section>
+
+    <aside class="summary panel" aria-labelledby="sum-h">
+      <h2 id="sum-h">Your build</h2>
+      <p class="chip" [class]="'chip-' + status()" data-testid="status">{{ statusLabel[status()] }}</p>
+
+      <div aria-live="polite" aria-atomic="true" class="totals" [attr.aria-busy]="evaluating()">
+        @if (report(); as r) {
+          <dl>
+            @if (r.savings > 0) { <div class="save"><dt>You save</dt><dd>{{ r.savings | bdt }}</dd></div> }
+            <div class="grand"><dt>Total</dt><dd data-testid="total">{{ r.total | bdt }}</dd></div>
+          </dl>
+        } @else {
+          <p class="muted">Add parts to see the total.</p>
+        }
+        @if (evaluating()) { <p class="muted small" role="status">Updating…</p> }
+      </div>
+
+      @if (evalError(); as e) {
+        <div class="alert alert-error" role="alert">{{ e }} <button type="button" class="btn btn-sm btn-outline" (click)="retry()">Try again</button></div>
+      }
+
+      @if (compat(); as c) {
+        <div class="power" data-testid="power">
+          <h3>Power</h3>
+          <p class="small">Estimated draw <strong>{{ c.estimatedWatts }} W</strong> · Recommended PSU <strong>{{ c.recommendedPsuWatts }} W</strong></p>
+          @if (meter(); as m) {
+            <meter [min]="0" [max]="m.max" [value]="c.estimatedWatts" [attr.low]="m.max * 0.6" [attr.high]="m.max * 0.8" [attr.optimum]="0" aria-label="Estimated power draw compared with PSU capacity"></meter>
+            <p class="small" [class.bad]="m.level === 'low'" [class.tight]="m.level === 'tight'" data-testid="psu-note">
+              @if (c.psuWatts === null) { No power supply chosen yet. }
+              @else if (m.level === 'low') { Your {{ c.psuWatts }} W PSU is below the recommended {{ c.recommendedPsuWatts }} W. }
+              @else if (m.level === 'tight') { Your {{ c.psuWatts }} W PSU has little headroom ({{ m.pct }}% load). }
+              @else { Your {{ c.psuWatts }} W PSU covers this build ({{ m.pct }}% load). }
+            </p>
+          }
+        </div>
+
+        <div class="issues" aria-live="polite">
+          <h3>Compatibility</h3>
+          @for (sev of severities; track sev) {
+            @if (issues(sev); as list) {
+              @if (list.length) {
+                <div [attr.role]="sev === 'Error' ? 'alert' : null" class="grp" [class]="'grp g-' + sev" [attr.data-severity]="sev">
+                  <h4><span class="sev">{{ sev }}</span> {{ severityLabel[sev] }} ({{ list.length }})</h4>
+                  <ul>
+                    @for (i of list; track i.code + i.message) { <li>{{ i.message }}</li> }
+                  </ul>
+                </div>
+              }
+            }
+          }
+          @if (!c.issues.length) { <p class="muted small">No problems found.</p> }
+        </div>
+      }
+
+      <div class="actions">
+        <button type="button" class="btn btn-primary btn-block" (click)="addAllToCart()" [disabled]="!buyable().buy.length || evaluating()">
+          <app-icon name="cart" [size]="18" /> Add whole build to cart
+        </button>
+        @if (compat() && !compat()!.isCompatible && report()) {
+          <p class="warn small" data-testid="incompat-warn">This build has compatibility errors. You can still add it to your cart, but the parts may not work together.</p>
+        }
+        @if (cartResult(); as r) {
+          <p class="small" role="status">
+            @if (r.added) { {{ r.added }} {{ r.added === 1 ? 'part' : 'parts' }} added. <a routerLink="/cart">View cart</a>. }
+            @if (r.skipped.length) { Skipped (unavailable): {{ r.skipped.join(', ') }}. }
+          </p>
+        }
+        <button type="button" class="btn btn-outline btn-block" (click)="save()" [disabled]="!items().length || saving()">
+          {{ saving() ? 'Saving…' : 'Save & share' }}
+        </button>
+        <button type="button" class="btn btn-ghost btn-block" (click)="reset()" [disabled]="!items().length">Reset build</button>
+        @if (saveError(); as e) { <p class="error-text" role="alert">{{ e }}</p> }
+        @if (link(); as l) {
+          <div class="share">
+            <label for="share-link">Shareable link</label>
+            <div class="share-row">
+              <input id="share-link" class="input" type="text" readonly [value]="l" (focus)="selectAll($event)" />
+              <button type="button" class="btn btn-outline btn-sm" (click)="copyLink()">Copy</button>
+            </div>
+            <p class="small" role="status">
+              @switch (copyState()) {
+                @case ('copied') { Link copied. }
+                @case ('failed') { Copy is not available here: select the link and copy it manually. }
+              }
+            </p>
+          </div>
+        }
+      </div>
+    </aside>
+  </div>
+</div>
+
+@if (pickerSlot(); as s) {
+  <app-part-picker [slot]="s" [filters]="pickerFilters()" (picked)="pick($event)" (closed)="closePicker()" />
+}
