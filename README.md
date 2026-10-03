@@ -53,6 +53,6 @@ Register a customer on `/register`. The admin panel is at `/admin` (sign in as t
 ## Tests
 ```bash
 cd backend  && dotnet test                  # 320 unit + 79 integration (SQLite in-memory for tests only)
-cd frontend && npm test -- --watch=false    # 187 Vitest specs
+cd frontend && npm test -- --watch=false    # 282 Vitest specs
 ```
 Screenshots of the storefront: [`docs/screenshots/`](docs/screenshots). Design notes: [`docs/frontend.md`](docs/frontend.md).

@@ -64,7 +64,7 @@ import { SeoService } from '../../core/services/seo.service';
     .adm-badge.bad { background: var(--danger-bg); color: var(--danger); border-color: transparent; }
     .adm-badge.info { background: var(--primary-weak); color: var(--primary-strong); border-color: transparent; }
     .adm-grid { display: grid; gap: 1rem; }
-    .adm-grid.cols-2 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); }
+    .adm-grid.cols-2 { grid-template-columns: repeat(auto-fit, minmax(min(100%, 34rem), 1fr)); }
     .adm-form-grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); }
     .adm-form-grid .wide { grid-column: 1 / -1; }
     textarea.input { min-height: 5rem; resize: vertical; }
