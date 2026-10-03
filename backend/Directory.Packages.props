@@ -15,7 +15,7 @@
     <PackageVersion Include="FluentValidation" Version="12.1.1" />
     <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
     <PackageVersion Include="Serilog.AspNetCore" Version="9.0.0" />
-    <PackageVersion Include="Swashbuckle.AspNetCore" Version="9.0.6" />
+    <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.2.3" />
     <!-- Tests (test providers only; production stays SQL Server) -->
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.20" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.0.20" />
