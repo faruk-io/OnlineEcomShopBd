@@ -18,7 +18,7 @@ RUN dotnet publish src/TechBazar.Api/TechBazar.Api.csproj \
       -c Release --no-restore -o /app/publish /p:UseAppHost=false
 
 # ---- runtime -------------------------------------------------------------
-FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 
 # /data/uploads: admin-uploaded images (mount a volume here). /app/logs: Serilog file sink (appsettings.Production.json).
