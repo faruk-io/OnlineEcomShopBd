@@ -35,6 +35,7 @@ export function toApiError(error: HttpErrorResponse): ApiError {
     detail: typeof body['detail'] === 'string' ? body['detail'] : null,
     errors,
     traceId: typeof body['traceId'] === 'string' ? body['traceId'] : null,
+    ...(typeof body['code'] === 'string' ? { code: body['code'] } : {}),
   };
 }
 

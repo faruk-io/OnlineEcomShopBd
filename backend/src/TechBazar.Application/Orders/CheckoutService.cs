@@ -20,6 +20,7 @@ public sealed class CheckoutService(
     IEmailSender email,
     IOptions<ShippingOptions> shippingOptions,
     IOptions<PaymentOptions> paymentOptions,
+    IOptions<TechBazar.Application.Auth.AccountOptions> accountOptions,
     TimeProvider clock,
     ILogger<CheckoutService> logger) : ICheckoutService
 {
@@ -36,7 +37,8 @@ public sealed class CheckoutService(
             new PaymentOptionDto(PaymentMethod.Online, "Pay online", "bKash, Nagad, cards and internet banking via SSLCommerz", payments.OnlinePaymentsEnabled),
         ],
         new StoreDto(_ship.StoreName, _ship.StoreAddress),
-        Divisions.All);
+        Divisions.All,
+        accountOptions.Value.RequireVerifiedEmailForCheckout);
 
     // ------------------------------------------------------------------ quote
     public async Task<CheckoutQuoteDto> QuoteAsync(Guid userId, CheckoutQuoteRequest request, CancellationToken ct = default)

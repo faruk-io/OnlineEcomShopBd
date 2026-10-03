@@ -15,6 +15,7 @@ public sealed class AuthService(
     UserManager<ApplicationUser> users,
     ApplicationDbContext db,
     ITokenService tokens,
+    IAccountService account,
     IOptions<JwtOptions> jwtOptions) : IAuthService
 {
     private readonly JwtOptions _jwt = jwtOptions.Value;
@@ -41,6 +42,8 @@ public sealed class AuthService(
 
         var role = await users.AddToRoleAsync(user, Roles.Customer);
         if (!role.Succeeded) throw ToValidation(role);
+
+        await account.SendVerificationAsync(user.Id, ipAddress, ct);   // never throws: a mail problem must not break sign-up
 
         return await IssueAsync(user, ipAddress, ct);
     }
@@ -122,7 +125,7 @@ public sealed class AuthService(
     public async Task<UserDto> GetProfileAsync(Guid userId, CancellationToken ct = default)
     {
         var user = await users.FindByIdAsync(userId.ToString()) ?? throw new NotFoundException("User not found.");
-        return new UserDto(user.Id, user.Email!, user.FullName, user.PhoneNumber, [.. await users.GetRolesAsync(user)]);
+        return new UserDto(user.Id, user.Email!, user.FullName, user.PhoneNumber, [.. await users.GetRolesAsync(user)], user.EmailConfirmed);
     }
 
     public async Task<UserDto> UpdateProfileAsync(Guid userId, UpdateProfileRequest request, CancellationToken ct = default)
@@ -132,7 +135,7 @@ public sealed class AuthService(
         user.PhoneNumber = string.IsNullOrWhiteSpace(request.Phone) ? null : request.Phone.Trim();
         var result = await users.UpdateAsync(user);
         if (!result.Succeeded) throw ToValidation(result);
-        return new UserDto(user.Id, user.Email!, user.FullName, user.PhoneNumber, [.. await users.GetRolesAsync(user)]);
+        return new UserDto(user.Id, user.Email!, user.FullName, user.PhoneNumber, [.. await users.GetRolesAsync(user)], user.EmailConfirmed);
     }
 
     private async Task<AuthResponse> IssueAsync(ApplicationUser user, string? ip, CancellationToken ct)
@@ -158,7 +161,7 @@ public sealed class AuthService(
         var roles = (await users.GetRolesAsync(user)).ToList();
         var access = tokens.CreateAccessToken(user, roles);
         return new AuthResponse(access.Value, access.ExpiresAt, refreshToken, refreshExpires,
-            new UserDto(user.Id, user.Email!, user.FullName, user.PhoneNumber, roles));
+            new UserDto(user.Id, user.Email!, user.FullName, user.PhoneNumber, roles, user.EmailConfirmed));
     }
 
     private Task<int> RevokeAllAsync(Guid userId, string reason, DateTime now, CancellationToken ct) =>

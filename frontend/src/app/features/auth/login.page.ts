@@ -16,6 +16,7 @@ import { applyServerErrors, fieldError, safeReturnUrl } from './auth-forms';
         <h1>Sign in</h1>
         <p class="muted">New here? <a routerLink="/register" [queryParams]="route.snapshot.queryParams">Create an account</a></p>
 
+        @if (resetDone) { <div class="alert alert-success" role="status">Your password has been changed. Sign in with the new password.</div> }
         @if (formError()) { <div class="alert alert-error" role="alert">{{ formError() }}</div> }
 
         <form [formGroup]="form" (ngSubmit)="submit()" novalidate>
@@ -30,13 +31,14 @@ import { applyServerErrors, fieldError, safeReturnUrl } from './auth-forms';
             <input id="password" class="input" type="password" formControlName="password" autocomplete="current-password"
               [attr.aria-invalid]="!!err('password')" [attr.aria-describedby]="err('password') ? 'pw-err' : null" />
             @if (err('password'); as m) { <span id="pw-err" class="error-text">{{ m }}</span> }
+            <a class="forgot" routerLink="/forgot-password">Forgot your password?</a>
           </div>
           <button class="btn btn-primary btn-block" type="submit" [disabled]="busy()">{{ busy() ? 'Signing in…' : 'Sign in' }}</button>
         </form>
       </div>
     </div>
   `,
-  styles: `.narrow { max-width: 28rem; padding-block: 2rem; } h1 { margin-bottom: .25rem; }`,
+  styles: `.narrow { max-width: 28rem; padding-block: 2rem; } h1 { margin-bottom: .25rem; } .forgot { font-size: .85rem; }`,
 })
 export class LoginPage {
   private readonly fb = inject(FormBuilder);
@@ -45,6 +47,7 @@ export class LoginPage {
   private readonly toast = inject(ToastService);
   protected readonly route = inject(ActivatedRoute);
 
+  protected readonly resetDone = this.route.snapshot.queryParamMap.get('reset') === '1';
   protected readonly busy = signal(false);
   protected readonly formError = signal('');
   protected readonly form = this.fb.nonNullable.group({

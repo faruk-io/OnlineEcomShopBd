@@ -2,8 +2,9 @@ import { ChangeDetectionStrategy, Component, afterNextRender, computed, effect, 
 import { rxResource } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
-import { errorMessage } from '../../core/interceptors/error.interceptor';
+import { errorMessage, isApiError } from '../../core/interceptors/error.interceptor';
 import { Address, CheckoutQuote, PaymentMethod, ShippingMethod } from '../../core/models/api.models';
+import { AuthService } from '../../core/services/auth.service';
 import { CartService } from '../../core/services/cart.service';
 import { CheckoutService } from '../../core/services/checkout.service';
 import { Redirector } from '../../core/services/redirector.service';
@@ -13,6 +14,7 @@ import { safeValue } from '../../core/util/resource';
 import { BD_PHONE } from '../auth/auth-forms';
 import { AddressFormComponent } from '../../shared/address-form.component';
 import { BreadcrumbComponent } from '../../shared/breadcrumb.component';
+import { VerifyEmailBannerComponent } from '../../shared/verify-email-banner.component';
 
 /** Does this district get the inside-Dhaka rate? Display hint only: the server re-derives the zone from the saved address. */
 export const isInsideDhaka = (district: string | null | undefined): boolean => (district ?? '').trim().toLowerCase() === 'dhaka';
@@ -23,13 +25,14 @@ export const homeMethodFor = (address: Pick<Address, 'district'> | null | undefi
 
 @Component({
   selector: 'app-checkout',
-  imports: [RouterLink, FormsModule, BdtPipe, BreadcrumbComponent, AddressFormComponent],
+  imports: [RouterLink, FormsModule, BdtPipe, BreadcrumbComponent, AddressFormComponent, VerifyEmailBannerComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   templateUrl: './checkout.page.html',
   styleUrl: './checkout.page.scss',
 })
 export class CheckoutPage {
   protected readonly cart = inject(CartService);
+  protected readonly auth = inject(AuthService);
   private readonly api = inject(CheckoutService);
   private readonly router = inject(Router);
   private readonly redirector = inject(Redirector);
@@ -73,7 +76,13 @@ export class CheckoutPage {
   protected readonly store = computed(() => safeValue(this.options)?.store);
 
   protected readonly pickupValid = computed(() => this.contactName().trim().length > 0 && BD_PHONE.test(this.contactPhone().trim()));
+  /** The store only lets verified customers order (flag from /checkout/options) or the server just refused with `email_not_verified`. */
+  private readonly serverSaidUnverified = signal(false);
+  protected readonly needsVerification = computed(
+    () => this.auth.user()?.emailConfirmed === false && (safeValue(this.options)?.requireVerifiedEmail === true || this.serverSaidUnverified()),
+  );
   protected readonly canPlace = computed(() => {
+    if (this.needsVerification()) return false;
     const q = this.q();
     if (!q || !q.canPlaceOrder || this.busy() || this.quote.isLoading()) return false;
     return this.mode() === 'pickup' ? this.pickupValid() : this.addressId() !== null;
@@ -142,6 +151,13 @@ export class CheckoutPage {
         },
         error: (e) => {
           this.busy.set(false);
+          if (isApiError(e) && e.status === 403 && e.code === 'email_not_verified') {
+            // Not a generic failure: show the verification prompt instead (refresh the profile in case our copy was stale).
+            this.serverSaidUnverified.set(true);
+            this.formError.set('Please verify your email address before placing your order.');
+            this.auth.reloadUser().subscribe({ error: () => undefined });
+            return;
+          }
           this.formError.set(errorMessage(e));
           this.quote.reload(); // stock or price may have changed
         },

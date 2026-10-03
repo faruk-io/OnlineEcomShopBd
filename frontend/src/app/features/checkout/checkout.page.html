@@ -1,6 +1,7 @@
 <div class="container section">
   <app-breadcrumb [items]="[{ label: 'Cart', link: ['/cart'] }, { label: 'Checkout' }]" />
   <h1>Checkout</h1>
+  <app-verify-email-banner [blocking]="needsVerification()" />
 
   @if (cart.lines().length === 0) {
     <div class="panel empty">
@@ -139,7 +140,8 @@
           <p class="muted">Choose a delivery address to see your total.</p>
         }
         @if (formError()) { <div class="alert alert-error" role="alert">{{ formError() }}</div> }
-        <button type="button" class="btn btn-primary btn-block" [disabled]="!canPlace()" (click)="place()">
+        @if (needsVerification()) { <p class="error-text" id="verify-why">Verify your email address to place your order. Use the notice at the top of this page to resend the link.</p> }
+        <button type="button" class="btn btn-primary btn-block" [disabled]="!canPlace()" [attr.aria-describedby]="needsVerification() ? 'verify-why' : null" (click)="place()">
           {{ busy() ? 'Placing order…' : payment() === 'Online' ? 'Place order & pay online' : 'Place order' }}
         </button>
         <p class="hint">The total is calculated by our server from current prices; it can’t be changed from your browser.</p>

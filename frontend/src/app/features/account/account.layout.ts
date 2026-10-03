@@ -3,10 +3,11 @@ import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/rou
 import { AuthService } from '../../core/services/auth.service';
 import { ToastService } from '../../core/services/toast.service';
 import { BreadcrumbComponent } from '../../shared/breadcrumb.component';
+import { VerifyEmailBannerComponent } from '../../shared/verify-email-banner.component';
 
 @Component({
   selector: 'app-account-layout',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, BreadcrumbComponent],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, BreadcrumbComponent, VerifyEmailBannerComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="container section">
@@ -24,7 +25,7 @@ import { BreadcrumbComponent } from '../../shared/breadcrumb.component';
             <li><button type="button" class="all" (click)="logoutEverywhere()">Sign out on all devices</button></li>
           </ul>
         </nav>
-        <div class="content"><router-outlet /></div>
+        <div class="content"><app-verify-email-banner /><router-outlet /></div>
       </div>
     </div>
   `,

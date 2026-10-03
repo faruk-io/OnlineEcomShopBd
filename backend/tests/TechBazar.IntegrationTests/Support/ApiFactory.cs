@@ -25,17 +25,22 @@ public class ApiFactory : WebApplicationFactory<Program>
 {
     private readonly int _authPermitLimit;
     private readonly IReadOnlyDictionary<string, string?> _extra;
+    private readonly Action<IServiceCollection>? _services;
 
     public ApiFactory() : this(1000, null) { }
 
-    private ApiFactory(int authPermitLimit, IReadOnlyDictionary<string, string?>? extra)
+    private ApiFactory(int authPermitLimit, IReadOnlyDictionary<string, string?>? extra, Action<IServiceCollection>? services = null)
     {
         _authPermitLimit = authPermitLimit;
         _extra = extra ?? new Dictionary<string, string?>();
+        _services = services;
     }
 
     /// <summary>Factory with a tight auth rate limit, for rate-limiter tests.</summary>
     public static ApiFactory WithAuthLimit(int permits) => new(permits, null);
+
+    /// <summary>Factory whose service container is adjusted after the app's own registrations (e.g. to stub a dependency).</summary>
+    public static ApiFactory WithServices(Action<IServiceCollection> services) => new(1000, null, services);
 
     /// <summary>Factory with extra / overriding configuration (e.g. a tiny global rate limit, secure cookies).</summary>
     public static ApiFactory WithConfig(params (string Key, string Value)[] settings) =>
@@ -63,6 +68,7 @@ public class ApiFactory : WebApplicationFactory<Program>
             ["RateLimiting:Auth:WindowSeconds"] = "60",
             ["RateLimiting:Public:PermitLimit"] = "10000",
             ["RateLimiting:Global:PermitLimit"] = "100000",
+            ["RateLimiting:Recovery:PermitLimit"] = "100000",
             ["Storage:RootPath"] = _uploads,
             ["Payments:PublicApiBaseUrl"] = "https://api.test",
             ["Payments:StorefrontBaseUrl"] = "https://shop.test",
@@ -83,6 +89,7 @@ public class ApiFactory : WebApplicationFactory<Program>
             services.RemoveAll<IPaymentGateway>();
             services.AddSingleton<IPaymentGateway, CashOnDeliveryGateway>();
             services.AddSingleton<IPaymentGateway, FakeOnlineGateway>();
+            _services?.Invoke(services);
             _connection.Open();
             services.AddDbContext<ApplicationDbContext>(o => o.UseSqlite(_connection).AddInterceptors(Sql));
         });

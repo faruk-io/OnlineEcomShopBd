@@ -13,18 +13,22 @@ namespace TechBazar.UnitTests.Support;
 /// <summary>A signed-in shopper on a fresh seeded database: add to cart, add addresses, check out, then inspect rows.</summary>
 public sealed class Scenario : IDisposable
 {
-    public TestDatabase Db { get; } = new();
+    public TestDatabase Db { get; }
     public IServiceScope Scope { get; }
     public Guid UserId { get; private set; }
     public string Email { get; private set; } = "";
     public T Get<T>() where T : notnull => Scope.ServiceProvider.GetRequiredService<T>();
     public ApplicationDbContext Ctx => Get<ApplicationDbContext>();
 
-    private Scenario() => Scope = Db.CreateScope();
-
-    public static async Task<Scenario> CreateAsync(string email = "rahim@example.com")
+    private Scenario(Action<Microsoft.Extensions.DependencyInjection.IServiceCollection>? configure)
     {
-        var s = new Scenario();
+        Db = configure is null ? new TestDatabase() : TestDatabase.With(configure);
+        Scope = Db.CreateScope();
+    }
+
+    public static async Task<Scenario> CreateAsync(string email = "rahim@example.com", Action<Microsoft.Extensions.DependencyInjection.IServiceCollection>? configure = null)
+    {
+        var s = new Scenario(configure);
         (s.UserId, s.Email) = await s.NewUserAsync(email);
         return s;
     }

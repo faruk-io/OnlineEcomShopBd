@@ -21,10 +21,15 @@ public sealed class TestDatabase : IDisposable
 {
     private readonly SqliteConnection _connection = new("DataSource=:memory:");
     public ServiceProvider Services { get; }
+    /// <summary>Wall clock the services see; <see cref="MutableClock.Advance"/> to test expiry without sleeping.</summary>
+    public MutableClock Clock { get; } = new();
 
-    public TestDatabase() : this(true) { }
+    public TestDatabase() : this(true, null) { }
 
-    private TestDatabase(bool seed)
+    /// <summary>A database whose service container can be adjusted before it is built (e.g. different <c>AccountOptions</c>).</summary>
+    public static TestDatabase With(Action<IServiceCollection> configure) => new(true, configure);   // factory, not a ctor: xunit class fixtures need ONE public ctor
+
+    private TestDatabase(bool seed, Action<IServiceCollection>? configure)
     {
         _connection.Open();
         var services = new ServiceCollection();
@@ -34,7 +39,11 @@ public sealed class TestDatabase : IDisposable
         services.AddIdentityCore<ApplicationUser>().AddRoles<ApplicationRole>().AddEntityFrameworkStores<ApplicationDbContext>();
         services.Configure<SeedOptions>(o => { o.Enabled = true; });
         services.AddScoped<DataSeeder>();
+        services.AddSingleton(Clock);                              // registered before AddApplication, whose TryAdd then keeps it
+        services.AddSingleton<TimeProvider>(Clock);
         services.AddApplication();
+        services.AddOptions<TechBazar.Application.Auth.AccountOptions>();
+        services.AddScoped<TechBazar.Application.Auth.IAccountService, AccountService>();
         services.AddOptions<ShippingOptions>();
         services.Configure<PaymentOptions>(o => { o.PublicApiBaseUrl = "https://api.test"; o.StorefrontBaseUrl = "https://shop.test"; });
         services.AddSingleton<CapturingEmailSender>();
@@ -42,6 +51,7 @@ public sealed class TestDatabase : IDisposable
         services.AddSingleton<FakeOnlineGateway>();
         services.AddSingleton<IPaymentGateway>(sp => sp.GetRequiredService<FakeOnlineGateway>());
         services.AddSingleton<IPaymentGateway, TechBazar.Infrastructure.Payments.CashOnDeliveryGateway>();
+        configure?.Invoke(services);
         Services = services.BuildServiceProvider();
 
         using var scope = Services.CreateScope();

@@ -11,7 +11,7 @@ export const provideTestHttp = () => [
   provideHttpClientTesting(),
 ];
 
-export const USER: UserDto = { id: 'u-1', email: 'rahim@example.com', fullName: 'Rahim Uddin', phone: null, roles: ['Customer'] };
+export const USER: UserDto = { id: 'u-1', email: 'rahim@example.com', fullName: 'Rahim Uddin', phone: null, roles: ['Customer'], emailConfirmed: true };
 
 export const authResponse = (n = 1, user: UserDto = USER): AuthResponse => ({
   accessToken: `access-${n}`,

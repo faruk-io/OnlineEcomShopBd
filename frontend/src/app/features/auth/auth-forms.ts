@@ -33,7 +33,7 @@ export function fieldError(form: FormGroup, name: string, labels: Record<string,
   if (e['required']) return `${label} is required.`;
   if (e['email']) return 'Enter a valid email address.';
   if (e['phone']) return 'Enter a valid Bangladeshi mobile number, e.g. 01712345678.';
-  if (e['minlength'] && name === 'password') return 'Use at least 8 characters.';
+  if (e['minlength'] && (name === 'password' || name === 'newPassword')) return 'Use at least 8 characters.';
   if (e['upper']) return 'Add an uppercase letter.';
   if (e['lower']) return 'Add a lowercase letter.';
   if (e['digit']) return 'Add a number.';

@@ -33,6 +33,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<PcBuild> PcBuilds => Set<PcBuild>();
     public DbSet<PcBuildItem> PcBuildItems => Set<PcBuildItem>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<AccountToken> AccountTokens => Set<AccountToken>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {

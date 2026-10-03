@@ -16,6 +16,7 @@ using TechBazar.Api.Extensions;
 using TechBazar.Api.Filters;
 using TechBazar.Api.Middleware;
 using TechBazar.Application;
+using TechBazar.Application.Email;
 using TechBazar.Infrastructure;
 using TechBazar.Infrastructure.Persistence;
 using TechBazar.Infrastructure.Seeding;
@@ -34,6 +35,11 @@ builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
     ["RateLimiting:Auth:PermitLimit"] = "100000",
     ["RateLimiting:Public:PermitLimit"] = "100000",
     ["RateLimiting:Global:PermitLimit"] = "1000000",
+    ["RateLimiting:Recovery:PermitLimit"] = "100000",
+    ["RateLimiting:Checkout:PermitLimit"] = "100000",
+    // emailed links (verify email / reset password) point at the SSR server the Playwright tests drive
+    ["Account:StorefrontBaseUrl"] = "http://localhost:4100",
+    ["Account:MaxRequestsPerHour"] = "1000",
     ["Storage:RootPath"] = uploads,
 });
 
@@ -50,6 +56,10 @@ builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddApplication();
 builder.Services.AddScoped<CatalogCache>();
 builder.Services.AddInfrastructure(builder.Configuration);
+// TEST ONLY: keep every outgoing email in memory so browser tests can open the verification / reset links (GET /__e2e/emails?to=...).
+builder.Services.RemoveAll<IEmailSender>();
+builder.Services.AddSingleton<MailBox>();
+builder.Services.AddSingleton<IEmailSender>(sp => sp.GetRequiredService<MailBox>());
 builder.Services.AddJwtAuth();
 builder.Services.AddCorsFromConfig();
 builder.Services.AddAppRateLimiting();
@@ -88,6 +98,7 @@ app.UseRateLimiter();
 app.UseAuthorization();
 app.UseOutputCache();
 app.MapControllers();
+app.MapGet("/__e2e/emails", (string? to, MailBox box) => Results.Json(box.For(to))).AllowAnonymous();
 
 using (var scope = app.Services.CreateScope())
 {
@@ -95,3 +106,24 @@ using (var scope = app.Services.CreateScope())
     await scope.ServiceProvider.GetRequiredService<DataSeeder>().SeedAsync();
 }
 app.Run();
+
+/// <summary>In-memory outbox for the E2E host (never part of the real API).</summary>
+sealed class MailBox : IEmailSender
+{
+    private readonly List<EmailMessage> _sent = [];
+    private readonly object _gate = new();
+
+    public Task SendAsync(EmailMessage message, CancellationToken ct = default)
+    {
+        lock (_gate) _sent.Add(message);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Oldest first, optionally only mail to one address (case-insensitive).</summary>
+    public object[] For(string? to)
+    {
+        lock (_gate)
+            return _sent.Where(m => to is null || string.Equals(m.To, to, StringComparison.OrdinalIgnoreCase))
+                .Select(m => (object)new { to = m.To, subject = m.Subject, textBody = m.TextBody, htmlBody = m.HtmlBody }).ToArray();
+    }
+}

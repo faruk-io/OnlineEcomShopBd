@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using TechBazar.Api.Extensions;
+using TechBazar.Application.Auth;
 using TechBazar.Application.Common;
 using TechBazar.Application.Orders;
 using TechBazar.Application.Payments;
@@ -56,7 +57,7 @@ public sealed class CheckoutController(ICheckoutService checkout) : ApiControlle
 }
 
 [Authorize]
-public sealed class OrdersController(ICheckoutService checkout, IOrderService orders, CatalogCache cache) : ApiControllerBase
+public sealed class OrdersController(ICheckoutService checkout, IOrderService orders, IAccountService account, CatalogCache cache) : ApiControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<PagedResult<OrderSummaryDto>>> List([FromQuery] int page = 1, [FromQuery] int pageSize = 10, CancellationToken ct = default) =>
@@ -74,6 +75,7 @@ public sealed class OrdersController(ICheckoutService checkout, IOrderService or
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Place(PlaceOrderRequest request, CancellationToken ct)
     {
+        await account.EnsureCanCheckoutAsync(User.UserId(), ct);   // no-op unless Account:RequireVerifiedEmailForCheckout
         var result = await checkout.PlaceAsync(User.UserId(), User.Email(), request, ct);
         await cache.InvalidateAsync(ct);
         return Created($"/api/v1/orders/{result.Order.OrderNumber}", result);

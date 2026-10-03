@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { HttpTestingController } from '@angular/common/http/testing';
 import { AuthService } from './auth.service';
+import { SILENT_ERRORS, SKIP_AUTH } from '../config';
 import { authResponse, problem, provideTestHttp } from '../testing/test-helpers';
 
 describe('AuthService', () => {
@@ -156,5 +157,80 @@ describe('AuthService', () => {
     expect(req.request.method).toBe('PUT');
     req.flush({ ...authResponse(1).user, fullName: 'Karim Hossain', phone: '01812345678' });
     expect(auth.user()?.fullName).toBe('Karim Hossain');
+  });
+
+  describe('account recovery', () => {
+    const isAnonymousSilent = (req: { context: { get: <T>(t: never) => T } }) =>
+      req.context.get(SKIP_AUTH as never) === true && req.context.get(SILENT_ERRORS as never) === true;
+
+    it('forgotPassword posts only the email, anonymously, with errors left to the page', () => {
+      let msg = '';
+      auth.forgotPassword('rahim@example.com').subscribe((r) => (msg = r.message));
+      const req = http.expectOne('/api/v1/auth/forgot-password');
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual({ email: 'rahim@example.com' });
+      expect(isAnonymousSilent(req.request)).toBe(true);
+      req.flush({ message: 'ok' }, { status: 202, statusText: 'Accepted' });
+      expect(msg).toBe('ok');
+    });
+
+    it('resetPassword posts token + new password anonymously and drops the local session on success', () => {
+      auth.login('a@b.com', 'x').subscribe();
+      http.expectOne('/api/v1/auth/login').flush(authResponse(1));
+      expect(auth.isAuthenticated()).toBe(true);
+
+      auth.resetPassword('tok_123-abc', 'NewPassw0rd').subscribe();
+      const req = http.expectOne('/api/v1/auth/reset-password');
+      expect(req.request.body).toEqual({ token: 'tok_123-abc', newPassword: 'NewPassw0rd' });
+      expect(isAnonymousSilent(req.request)).toBe(true);
+      req.flush(null, { status: 204, statusText: 'No Content' });
+
+      expect(auth.isAuthenticated()).toBe(false);
+      expect(auth.accessToken()).toBeNull();
+      expect(localStorage.getItem('tb.session.v1')).toBeNull();
+    });
+
+    it('a rejected reset keeps the local session and surfaces the normalised error (the token is not spent for weak passwords)', () => {
+      auth.login('a@b.com', 'x').subscribe();
+      http.expectOne('/api/v1/auth/login').flush(authResponse(1));
+      let error: unknown;
+      auth.resetPassword('tok', 'weak').subscribe({ error: (e) => (error = e) });
+      http.expectOne('/api/v1/auth/reset-password').flush(
+        { status: 400, title: 'Validation', errors: { newPassword: ['Too weak.'] } }, { status: 400, statusText: 'Bad Request' },
+      );
+      expect(error).toMatchObject({ status: 400, errors: { newPassword: ['Too weak.'] } });
+      expect(auth.isAuthenticated()).toBe(true);
+    });
+
+    it('verifyEmail posts the token anonymously', () => {
+      auth.verifyEmail('tok').subscribe();
+      const req = http.expectOne('/api/v1/auth/verify-email');
+      expect(req.request.body).toEqual({ token: 'tok' });
+      expect(isAnonymousSilent(req.request)).toBe(true);
+      req.flush(null, { status: 204, statusText: 'No Content' });
+    });
+
+    it('resendVerification is authenticated (access token attached) and silent', () => {
+      auth.login('a@b.com', 'x').subscribe();
+      http.expectOne('/api/v1/auth/login').flush(authResponse(1));
+      auth.resendVerification().subscribe();
+      const req = http.expectOne('/api/v1/auth/resend-verification');
+      expect(req.request.method).toBe('POST');
+      expect(req.request.context.get(SKIP_AUTH)).toBe(false);
+      expect(req.request.context.get(SILENT_ERRORS)).toBe(true);
+      expect(req.request.headers.get('Authorization')).toBe('Bearer access-1');
+      req.flush({ message: 'sent' }, { status: 202, statusText: 'Accepted' });
+    });
+
+    it('reloadUser re-reads /auth/me and updates the user signal', () => {
+      auth.login('a@b.com', 'x').subscribe();
+      http.expectOne('/api/v1/auth/login').flush(authResponse(1, { ...authResponse(1).user, emailConfirmed: false }));
+      expect(auth.user()?.emailConfirmed).toBe(false);
+      auth.reloadUser().subscribe();
+      const req = http.expectOne('/api/v1/auth/me');
+      expect(req.request.method).toBe('GET');
+      req.flush({ ...authResponse(1).user, emailConfirmed: true });
+      expect(auth.user()?.emailConfirmed).toBe(true);
+    });
   });
 });

@@ -16,6 +16,9 @@ export const routes: Routes = [
   { path: 'builder', title: 'PC Builder', loadComponent: () => import('./features/builder/builder.page').then((m) => m.BuilderPage) },
   { path: 'login', title: 'Login', canActivate: [guestGuard], loadComponent: () => import('./features/auth/login.page').then((m) => m.LoginPage) },
   { path: 'register', title: 'Create account', canActivate: [guestGuard], loadComponent: () => import('./features/auth/register.page').then((m) => m.RegisterPage) },
+  { path: 'forgot-password', title: 'Forgot password', loadComponent: () => import('./features/auth/forgot-password.page').then((m) => m.ForgotPasswordPage) },
+  { path: 'reset-password', title: 'Reset password', loadComponent: () => import('./features/auth/reset-password.page').then((m) => m.ResetPasswordPage) },
+  { path: 'verify-email', title: 'Verify email', loadComponent: () => import('./features/auth/verify-email.page').then((m) => m.VerifyEmailPage) },
   {
     path: 'account',
     canActivate: [authGuard],

@@ -24,6 +24,7 @@ public static class Policies
     public const string AuthRateLimit = "auth";
     public const string PublicRateLimit = "public";
     public const string CheckoutRateLimit = "checkout";
+    public const string RecoveryRateLimit = "recovery";
     public const string CatalogCache = "Catalog";
     public const string AutocompleteCache = "Autocomplete";
     public const string AdminOnly = "AdminOnly";
@@ -102,6 +103,13 @@ public static class ServiceCollectionExtensions
             o.AddPolicy(Policies.CheckoutRateLimit, ctx => RateLimitPartition.GetFixedWindowLimiter(
                 "co:" + (ctx.User.FindFirst("sub")?.Value ?? ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown"),
                 _ => new FixedWindowRateLimiterOptions { PermitLimit = checkoutPermit, Window = window, QueueLimit = 0, AutoReplenishment = true }));
+            // Emails that can be triggered by anyone (forgot password, resend verification): few per client, long window, so the endpoint cannot
+            // be used to flood an inbox or to probe at scale. (The per-ACCOUNT hourly cap lives in AccountService.)
+            var recoveryPermit = cfg.GetValue("RateLimiting:Recovery:PermitLimit", 5);
+            var recoveryWindow = TimeSpan.FromSeconds(cfg.GetValue("RateLimiting:Recovery:WindowSeconds", 900));
+            o.AddPolicy(Policies.RecoveryRateLimit, ctx => RateLimitPartition.GetFixedWindowLimiter(
+                "rec:" + (ctx.User.FindFirst("sub")?.Value ?? ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown"),
+                _ => new FixedWindowRateLimiterOptions { PermitLimit = recoveryPermit, Window = recoveryWindow, QueueLimit = 0, AutoReplenishment = true }));
             o.OnRejected = async (context, ct) =>
             {
                 if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retry))

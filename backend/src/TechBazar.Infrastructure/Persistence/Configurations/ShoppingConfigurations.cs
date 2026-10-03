@@ -132,6 +132,21 @@ public class RefreshTokenConfiguration : IEntityTypeConfiguration<RefreshToken>
     }
 }
 
+public class AccountTokenConfiguration : IEntityTypeConfiguration<AccountToken>
+{
+    public void Configure(EntityTypeBuilder<AccountToken> b)
+    {
+        b.Property(x => x.Purpose).HasConversion<int>();
+        b.Property(x => x.TokenHash).HasMaxLength(64).IsRequired();
+        b.Property(x => x.Email).HasMaxLength(256).IsRequired();
+        b.Property(x => x.CreatedByIp).HasMaxLength(64);
+        b.HasIndex(x => x.TokenHash).IsUnique();
+        // throttling ("how many resets did this user request in the last hour?") and superseding older tokens
+        b.HasIndex(x => new { x.UserId, x.Purpose, x.CreatedAt });
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
 public class OrderStatusHistoryConfiguration : IEntityTypeConfiguration<OrderStatusHistory>
 {
     public void Configure(EntityTypeBuilder<OrderStatusHistory> b)

@@ -3,9 +3,11 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { CartItemDto } from '../../core/models/api.models';
 import { CartService } from '../../core/services/cart.service';
+import { AuthService } from '../../core/services/auth.service';
+import { ToastService } from '../../core/services/toast.service';
 import { Redirector } from '../../core/services/redirector.service';
 import { ADDRESS, OPTIONS, orderOf, quoteOf } from '../../core/testing/order-fixtures';
-import { provideTestHttp } from '../../core/testing/test-helpers';
+import { USER, authResponse, provideTestHttp } from '../../core/testing/test-helpers';
 import { CheckoutPage, homeMethodFor } from './checkout.page';
 
 const cartLine: CartItemDto = {
@@ -36,17 +38,28 @@ describe('CheckoutPage', () => {
   };
 
   /** Renders with a guest-stored cart; the page loads options + addresses, re-prices the cart and asks for a quote. */
-  async function render(addresses = [ADDRESS], quote = quoteOf()) {
+  async function render(addresses = [ADDRESS], quote = quoteOf(), opts: { requireVerified?: boolean; unverified?: boolean } = {}) {
     localStorage.clear();
     localStorage.setItem('tb.cart.v1', JSON.stringify([cartLine]));
     TestBed.configureTestingModule({ providers: [provideRouter([]), provideTestHttp()] });
     http = TestBed.inject(HttpTestingController);
     TestBed.inject(CartService).init();
+    // A signed-in user also makes CartService merge / fetch the server cart; answer those with the same cart.
+    const serverCart = () =>
+      ['/api/v1/cart/merge', '/api/v1/cart'].forEach((u) => http.match(u).forEach((r) => r.flush({ items: [cartLine], itemCount: 2, subtotal: 23800, savings: 1800 })));
+    if (opts.unverified !== undefined) {
+      TestBed.inject(AuthService).login('rahim@example.com', 'x').subscribe();
+      http.expectOne('/api/v1/auth/login').flush(authResponse(1, { ...USER, emailConfirmed: !opts.unverified }));
+      await settle();
+      serverCart();
+    }
     f = TestBed.createComponent(CheckoutPage);
     await settle();
-    http.expectOne('/api/v1/checkout/options').flush(OPTIONS);
+    serverCart();
+    http.expectOne('/api/v1/checkout/options').flush({ ...OPTIONS, requireVerifiedEmail: opts.requireVerified ?? false });
     http.expectOne('/api/v1/addresses').flush(addresses);
     http.match('/api/v1/cart/preview').forEach((r) => r.flush({ items: [cartLine], itemCount: 2, subtotal: 23800, savings: 1800 }));
+    serverCart();
     await settle();
     if (addresses.length) http.expectOne('/api/v1/checkout/quote').flush(quote);
     await settle();
@@ -173,5 +186,47 @@ describe('CheckoutPage', () => {
     http.expectNone('/api/v1/checkout/quote');
     expect((el().querySelector('.summary .btn-primary') as HTMLButtonElement).disabled).toBe(true);
     expect(text()).toContain('Choose a delivery address');
+  });
+
+  describe('email verification gate', () => {
+    const placeBtn = () => el().querySelector('.summary .btn-primary') as HTMLButtonElement;
+
+    it('blocks "Place order" and explains why when the store requires a verified email and the user is unverified', async () => {
+      await render([ADDRESS], quoteOf(), { requireVerified: true, unverified: true });
+      expect(placeBtn().disabled).toBe(true);
+      expect(el().querySelector('app-verify-email-banner .blocking')).not.toBeNull();
+      expect(el().querySelector('#verify-why')!.textContent).toContain('Verify your email');
+      expect(placeBtn().getAttribute('aria-describedby')).toBe('verify-why');
+    });
+
+    it('does not block when the flag is off, or when the user is verified', async () => {
+      await render([ADDRESS], quoteOf(), { requireVerified: false, unverified: true });
+      expect(placeBtn().disabled).toBe(false);
+      expect(el().querySelector('#verify-why')).toBeNull();
+      expect(el().querySelector('app-verify-email-banner .banner')).not.toBeNull();   // still nudges, but does not block
+      expect(el().querySelector('app-verify-email-banner .blocking')).toBeNull();
+    });
+
+    it('does not block a verified user even when the store requires verification', async () => {
+      await render([ADDRESS], quoteOf(), { requireVerified: true, unverified: false });
+      expect(placeBtn().disabled).toBe(false);
+      expect(el().querySelector('app-verify-email-banner .banner')).toBeNull();
+    });
+
+    it('turns a 403 email_not_verified answer into the verification prompt, not a generic error', async () => {
+      await render([ADDRESS], quoteOf(), { requireVerified: false, unverified: true });
+      await click('.summary .btn-primary');
+      http.expectOne('/api/v1/orders').flush(
+        { status: 403, title: 'Email not verified', code: 'email_not_verified' }, { status: 403, statusText: 'Forbidden' },
+      );
+      await settle();
+      http.expectOne('/api/v1/auth/me').flush({ ...USER, emailConfirmed: false });
+      await settle();
+      expect(el().querySelector('.alert-error')!.textContent).toContain('verify your email');
+      expect(placeBtn().disabled).toBe(true);
+      expect(el().querySelector('app-verify-email-banner .blocking')).not.toBeNull();
+      expect(TestBed.inject(ToastService).toasts().filter((t) => t.kind === 'error')).toEqual([]);   // no "no permission" toast
+      http.expectNone('/api/v1/checkout/quote');
+    });
   });
 });

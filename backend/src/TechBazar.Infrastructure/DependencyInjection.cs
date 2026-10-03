@@ -49,6 +49,11 @@ public static class DependencyInjection
             .AddRoles<ApplicationRole>()
             .AddEntityFrameworkStores<ApplicationDbContext>();
 
+        services.AddOptions<TechBazar.Application.Auth.AccountOptions>().Bind(configuration.GetSection(TechBazar.Application.Auth.AccountOptions.SectionName));
+        services.AddScoped<TechBazar.Application.Auth.IAccountService, AccountService>();
+        services.AddSingleton<AccountJobQueue>();
+        services.AddSingleton<TechBazar.Application.Auth.IAccountJobs>(sp => sp.GetRequiredService<AccountJobQueue>());
+        services.AddHostedService<AccountJobWorker>();
         services.AddOptions<ShippingOptions>().Bind(configuration.GetSection(ShippingOptions.SectionName));
         services.AddOptions<PaymentOptions>().Bind(configuration.GetSection(PaymentOptions.SectionName));
         services.AddOptions<SslCommerzOptions>().Bind(configuration.GetSection(SslCommerzOptions.SectionName));

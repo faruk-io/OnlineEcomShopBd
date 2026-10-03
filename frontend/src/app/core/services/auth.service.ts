@@ -2,7 +2,7 @@ import { HttpClient, HttpContext, HttpHeaders } from '@angular/common/http';
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { Observable, finalize, map, shareReplay, tap, throwError } from 'rxjs';
 import { API_BASE, SILENT_ERRORS, SKIP_AUTH } from '../config';
-import { AuthResponse, UserDto } from '../models/api.models';
+import { AuthResponse, MessageDto, UserDto } from '../models/api.models';
 import { StorageService } from './storage.service';
 
 /**
@@ -76,6 +76,34 @@ export class AuthService {
   updateProfile(fullName: string, phone: string | null): Observable<UserDto> {
     return this.http
       .put<UserDto>(`${API_BASE}/auth/me`, { fullName, phone }, { context: new HttpContext().set(SILENT_ERRORS, true) })
+      .pipe(tap((user) => this._user.set(user)));
+  }
+
+  /** Always answers 202 with the same message, whether or not the address has an account. */
+  forgotPassword(email: string): Observable<MessageDto> {
+    return this.http.post<MessageDto>(`${API_BASE}/auth/forgot-password`, { email }, { context: this.formContext() });
+  }
+
+  /** Spends the one-time link token. The server revokes every session of the account, so the local one is dropped too. */
+  resetPassword(token: string, newPassword: string): Observable<void> {
+    return this.http
+      .post<void>(`${API_BASE}/auth/reset-password`, { token, newPassword }, { context: this.formContext() })
+      .pipe(tap(() => this.clearSession()));
+  }
+
+  verifyEmail(token: string): Observable<void> {
+    return this.http.post<void>(`${API_BASE}/auth/verify-email`, { token }, { context: this.formContext() });
+  }
+
+  /** Needs a signed-in user (the access token is attached). Throttled server-side. */
+  resendVerification(): Observable<MessageDto> {
+    return this.http.post<MessageDto>(`${API_BASE}/auth/resend-verification`, {}, { context: new HttpContext().set(SILENT_ERRORS, true) });
+  }
+
+  /** Re-reads the profile (e.g. after the email was verified in this browser). */
+  reloadUser(): Observable<UserDto> {
+    return this.http
+      .get<UserDto>(`${API_BASE}/auth/me`, { context: new HttpContext().set(SILENT_ERRORS, true) })
       .pipe(tap((user) => this._user.set(user)));
   }
 

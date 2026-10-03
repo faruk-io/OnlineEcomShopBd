@@ -185,7 +185,12 @@ export interface UserDto {
   fullName: string;
   phone: string | null;
   roles: string[];
+  /** False until the user opened the emailed verification link (or completed a password reset). */
+  emailConfirmed: boolean;
 }
+
+/** `{ message }` answers of the neutral account-recovery endpoints (202). */
+export interface MessageDto { message: string }
 
 export interface AuthResponse {
   accessToken: string;
@@ -203,6 +208,8 @@ export interface ApiError {
   detail: string | null;
   errors: Record<string, string[]> | null;
   traceId: string | null;
+  /** Machine-readable ProblemDetails extension, e.g. `email_not_verified`. Only present when the API sent one. */
+  code?: string;
 }
 
 // ------------------------------------------------------------------ Phase 3: checkout & orders
@@ -230,7 +237,7 @@ export type SaveAddressRequest = Omit<Address, 'id'>;
 export interface ShippingOption { method: ShippingMethod; label: string; fee: number; description: string }
 export interface PaymentOption { method: PaymentMethod; label: string; description: string; enabled: boolean }
 export interface StoreInfo { name: string; address: string }
-export interface CheckoutOptions { shipping: ShippingOption[]; payment: PaymentOption[]; store: StoreInfo; divisions: string[] }
+export interface CheckoutOptions { shipping: ShippingOption[]; payment: PaymentOption[]; store: StoreInfo; divisions: string[]; requireVerifiedEmail: boolean }
 
 export interface CheckoutQuoteRequest { shippingMethod: ShippingMethod; addressId: number | null; couponCode: string | null }
 export interface CheckoutLine {
