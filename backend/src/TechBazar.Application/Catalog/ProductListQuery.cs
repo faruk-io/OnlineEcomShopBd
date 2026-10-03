@@ -19,6 +19,8 @@ public class ProductListQuery
     public decimal? MinPrice { get; set; }
     public decimal? MaxPrice { get; set; }
     public bool? InStock { get; set; }
+    /// <summary>Only products currently discounted (<c>DiscountPrice &lt; Price</c>).</summary>
+    public bool? OnSale { get; set; }
     /// <summary>Spec filters in <c>Key:Value</c> form (e.g. <c>Socket:AM5</c>, <c>RAM Type:DDR5</c>).</summary>
     public List<string>? Spec { get; set; }
     /// <summary>Free-text search (name, SKU, brand, category).</summary>

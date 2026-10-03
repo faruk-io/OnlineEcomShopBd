@@ -7,6 +7,7 @@ public sealed record RegisterRequest(string FullName, string Email, string? Phon
 public sealed record LoginRequest(string Email, string Password);
 public sealed record RefreshRequest(string RefreshToken);
 public sealed record LogoutRequest(string RefreshToken);
+public sealed record UpdateProfileRequest(string FullName, string? Phone);
 
 public sealed record UserDto(Guid Id, string Email, string FullName, string? Phone, IReadOnlyList<string> Roles);
 
@@ -25,6 +26,24 @@ public interface IAuthService
     Task<AuthResponse> RefreshAsync(RefreshRequest request, string? ipAddress, CancellationToken ct = default);
     Task LogoutAsync(Guid userId, string refreshToken, CancellationToken ct = default);
     Task<UserDto> GetProfileAsync(Guid userId, CancellationToken ct = default);
+    Task<UserDto> UpdateProfileAsync(Guid userId, UpdateProfileRequest request, CancellationToken ct = default);
+}
+
+public static partial class BdPhoneRule
+{
+    // Bangladeshi mobile: 01XXXXXXXXX, optionally prefixed with +88 / 88.
+    [GeneratedRegex(@"^(?:\+?88)?01[3-9]\d{8}$")]
+    public static partial Regex Pattern();
+}
+
+public sealed class UpdateProfileRequestValidator : AbstractValidator<UpdateProfileRequest>
+{
+    public UpdateProfileRequestValidator()
+    {
+        RuleFor(x => x.FullName).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Phone).Matches(BdPhoneRule.Pattern()).When(x => !string.IsNullOrWhiteSpace(x.Phone))
+            .WithMessage("Phone must be a valid Bangladeshi mobile number, e.g. 01712345678.");
+    }
 }
 
 public sealed partial class RegisterRequestValidator : AbstractValidator<RegisterRequest>

@@ -53,5 +53,11 @@ public sealed class AuthController(IAuthService auth) : ApiControllerBase
     [ProducesResponseType(typeof(UserDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<UserDto>> Me(CancellationToken ct) => Ok(await auth.GetProfileAsync(CurrentUserId, ct));
 
+    [HttpPut("me")]
+    [Authorize]
+    [ProducesResponseType(typeof(UserDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<UserDto>> UpdateMe(UpdateProfileRequest request, CancellationToken ct) =>
+        Ok(await auth.UpdateProfileAsync(CurrentUserId, request, ct));
+
     private Guid CurrentUserId => Guid.Parse(User.FindFirst(JwtRegisteredClaimNames.Sub)!.Value);
 }

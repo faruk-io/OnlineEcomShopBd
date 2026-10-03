@@ -114,6 +114,16 @@ public sealed class AuthService(
         return new UserDto(user.Id, user.Email!, user.FullName, user.PhoneNumber, [.. await users.GetRolesAsync(user)]);
     }
 
+    public async Task<UserDto> UpdateProfileAsync(Guid userId, UpdateProfileRequest request, CancellationToken ct = default)
+    {
+        var user = await users.FindByIdAsync(userId.ToString()) ?? throw new NotFoundException("User not found.");
+        user.FullName = request.FullName.Trim();
+        user.PhoneNumber = string.IsNullOrWhiteSpace(request.Phone) ? null : request.Phone.Trim();
+        var result = await users.UpdateAsync(user);
+        if (!result.Succeeded) throw ToValidation(result);
+        return new UserDto(user.Id, user.Email!, user.FullName, user.PhoneNumber, [.. await users.GetRolesAsync(user)]);
+    }
+
     private async Task<AuthResponse> IssueAsync(ApplicationUser user, string? ip, CancellationToken ct)
     {
         var now = DateTime.UtcNow;

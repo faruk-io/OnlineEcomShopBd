@@ -150,6 +150,7 @@ public sealed class ProductService(IApplicationDbContext db, ICategoryHierarchy 
 
         if (query.MinPrice is { } min) products = products.Where(p => p.EffectivePrice >= min);
         if (query.MaxPrice is { } max) products = products.Where(p => p.EffectivePrice <= max);
+        if (query.OnSale == true) products = products.Where(p => p.EffectivePrice < p.Price);
         if (query.InStock == true) products = products.Where(p => p.StockStatus == StockStatus.InStock);
 
         foreach (var (key, values) in SpecFilterParser.Parse(query.Spec))
