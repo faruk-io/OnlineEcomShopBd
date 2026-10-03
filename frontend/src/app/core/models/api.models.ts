@@ -187,6 +187,12 @@ export interface UserDto {
   roles: string[];
   /** False until the user opened the emailed verification link (or completed a password reset). */
   emailConfirmed: boolean;
+  /** Two-step verification is turned on for the account. Optional so older payloads still type-check. */
+  mfaEnabled?: boolean;
+  /** Policy demands MFA for this user (Admin role). */
+  mfaRequired?: boolean;
+  /** THIS session passed a second factor. */
+  mfaSession?: boolean;
 }
 
 /** `{ message }` answers of the neutral account-recovery endpoints (202). */
@@ -211,6 +217,38 @@ export interface ApiError {
   /** Machine-readable ProblemDetails extension, e.g. `email_not_verified`. Only present when the API sent one. */
   code?: string;
 }
+
+// ------------------------------------------------------------------ Phase 6: two-step verification (TOTP)
+/** `POST /auth/login` answer 202: password accepted, a second factor is still needed. Not a session. */
+export interface MfaChallenge {
+  mfaRequired: true;
+  mfaToken: string;
+  expiresAt: string;
+}
+
+export interface MfaStatus {
+  enabled: boolean;
+  /** Policy requires MFA for this account (admins): it cannot be turned off. */
+  required: boolean;
+  setupPending: boolean;
+  recoveryCodesRemaining: number;
+  enabledAt: string | null;
+}
+
+export interface MfaSetup {
+  /** Base32 secret for manual entry. Only ever shown / encoded client-side. */
+  secret: string;
+  otpAuthUri: string;
+  issuer: string;
+  account: string;
+}
+
+export interface MfaEnabled {
+  recoveryCodes: string[];
+  auth: AuthResponse;
+}
+
+export interface RecoveryCodes { recoveryCodes: string[] }
 
 // ------------------------------------------------------------------ Phase 3: checkout & orders
 export type ShippingMethod = 'HomeDeliveryInsideDhaka' | 'HomeDeliveryOutsideDhaka' | 'StorePickup';

@@ -63,3 +63,15 @@ export function applyServerErrors(form: FormGroup, error: unknown): string {
 export function safeReturnUrl(url: string | null | undefined): string {
   return url && url.startsWith('/') && !url.startsWith('//') && !url.includes('://') && !url.includes('\\') ? url : '/';
 }
+
+/** Authenticator codes are pasted as "123 456" or "123-456": keep the digits only (max 6). */
+export function totpDigits(raw: string): string {
+  return raw.replace(/\D/g, '').slice(0, 6);
+}
+
+/** Recovery codes look like ABCDE-FGHJK; tolerate lowercase, spaces and a missing hyphen. Returns '' when nothing usable was typed. */
+export function normaliseRecoveryCode(raw: string): string {
+  const compact = raw.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  if (!compact) return '';
+  return compact.length === 10 ? `${compact.slice(0, 5)}-${compact.slice(5)}` : compact;
+}

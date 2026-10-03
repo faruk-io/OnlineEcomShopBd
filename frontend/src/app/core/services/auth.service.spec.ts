@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { HttpTestingController } from '@angular/common/http/testing';
 import { AuthService } from './auth.service';
 import { SILENT_ERRORS, SKIP_AUTH } from '../config';
-import { authResponse, problem, provideTestHttp } from '../testing/test-helpers';
+import { USER, authResponse, problem, provideTestHttp } from '../testing/test-helpers';
 
 describe('AuthService', () => {
   let auth: AuthService;
@@ -231,6 +231,129 @@ describe('AuthService', () => {
       expect(req.request.method).toBe('GET');
       req.flush({ ...authResponse(1).user, emailConfirmed: true });
       expect(auth.user()?.emailConfirmed).toBe(true);
+    });
+  });
+
+  describe('two-step verification', () => {
+    const challenge = (expiresAt = '2099-01-01T00:00:00Z') => ({ mfaRequired: true, mfaToken: 'chal-123', expiresAt });
+    const unauthorized = (detail: string) => ({ status: 401, title: 'Authentication failed.', detail });
+    const startChallenge = () => {
+      auth.login('rahim@example.com', 'Passw0rdX').subscribe();
+      http.expectOne('/api/v1/auth/login').flush(challenge(), { status: 202, statusText: 'Accepted' });
+    };
+    const storageDump = () => JSON.stringify({ ...localStorage, ...sessionStorage });
+
+    it('a 200 login still yields a session', () => {
+      let kind = '';
+      auth.login('a@b.com', 'x').subscribe((r) => (kind = r.kind));
+      http.expectOne('/api/v1/auth/login').flush(authResponse(1));
+      expect(kind).toBe('session');
+      expect(auth.isAuthenticated()).toBe(true);
+      expect(auth.mfaPending()).toBe(false);
+    });
+
+    it('a 202 keeps only the in-memory challenge: no session, no token, nothing in storage', () => {
+      let result: unknown;
+      auth.login('rahim@example.com', 'Passw0rdX').subscribe((r) => (result = r));
+      http.expectOne('/api/v1/auth/login').flush(challenge(), { status: 202, statusText: 'Accepted' });
+      expect(result).toEqual({ kind: 'mfa', expiresAt: '2099-01-01T00:00:00Z' });
+      expect(auth.mfaPending()).toBe(true);
+      expect(auth.isAuthenticated()).toBe(false);
+      expect(auth.accessToken()).toBeNull();
+      expect(storageDump()).toBe('{}');
+      expect(storageDump()).not.toContain('chal-123');
+    });
+
+    it('verify sends the challenge + code with the cookie header and applies the session', () => {
+      startChallenge();
+      auth.verifyMfa({ code: '123456' }).subscribe();
+      const req = http.expectOne('/api/v1/auth/mfa/verify');
+      expect(req.request.body).toEqual({ mfaToken: 'chal-123', code: '123456' });
+      expect(req.request.headers.get('X-Refresh-Mode')).toBe('cookie');
+      expect(req.request.headers.has('Authorization')).toBe(false);
+      req.flush(authResponse(2));
+      expect(auth.isAuthenticated()).toBe(true);
+      expect(auth.accessToken()).toBe('access-2');
+      expect(auth.mfaPending()).toBe(false);
+      expect(storageDump()).toBe('{"tb.session.v1":"1"}');
+    });
+
+    it('verify can use a recovery code instead', () => {
+      startChallenge();
+      auth.verifyMfa({ recoveryCode: 'ABCDE-FGHJK' }).subscribe();
+      expect(http.expectOne('/api/v1/auth/mfa/verify').request.body).toEqual({ mfaToken: 'chal-123', recoveryCode: 'ABCDE-FGHJK' });
+    });
+
+    it('a wrong code keeps the challenge so the user can retry', () => {
+      startChallenge();
+      let error: unknown;
+      auth.verifyMfa({ code: '000000' }).subscribe({ error: (e) => (error = e) });
+      http.expectOne('/api/v1/auth/mfa/verify').flush(unauthorized('That code is not valid.'), { status: 401, statusText: 'Unauthorized' });
+      expect(error).toMatchObject({ status: 401 });
+      expect(auth.mfaPending()).toBe(true);
+      expect(auth.isAuthenticated()).toBe(false);
+    });
+
+    it.each(['This sign-in attempt is invalid or has expired. Please sign in again.', 'Account temporarily locked. Try again later.'])(
+      'an expired / locked challenge is dropped (%s)', (detail) => {
+        startChallenge();
+        auth.verifyMfa({ code: '000000' }).subscribe({ error: () => undefined });
+        http.expectOne('/api/v1/auth/mfa/verify').flush(unauthorized(detail), { status: 401, statusText: 'Unauthorized' });
+        expect(auth.mfaPending()).toBe(false);
+      });
+
+    it('a challenge past its expiry is dropped locally without calling the API', () => {
+      auth.login('a@b.com', 'x').subscribe();
+      http.expectOne('/api/v1/auth/login').flush(challenge('2000-01-01T00:00:00Z'), { status: 202, statusText: 'Accepted' });
+      let error: unknown;
+      auth.verifyMfa({ code: '123456' }).subscribe({ error: (e) => (error = e) });
+      expect(error).toMatchObject({ status: 401 });
+      expect(auth.mfaPending()).toBe(false);
+    });
+
+    it('cancelMfa forgets the challenge', () => {
+      startChallenge();
+      auth.cancelMfa();
+      expect(auth.mfaPending()).toBe(false);
+    });
+
+    it('enable applies the fresh MFA session from the response and returns the recovery codes', () => {
+      localStorage.setItem('tb.session.v1', '1');
+      let codes: string[] = [];
+      auth.mfaEnable('123456').subscribe((c) => (codes = c));
+      const req = http.expectOne('/api/v1/auth/mfa/enable');
+      expect(req.request.body).toEqual({ code: '123456' });
+      expect(req.request.headers.get('X-Refresh-Mode')).toBe('cookie');
+      req.flush({ recoveryCodes: ['ABCDE-FGHJK'], auth: authResponse(5, { ...USER, mfaEnabled: true, mfaSession: true }) });
+      expect(codes).toEqual(['ABCDE-FGHJK']);
+      expect(auth.accessToken()).toBe('access-5');
+      expect(auth.user()?.mfaSession).toBe(true);
+      expect(storageDump()).not.toContain('ABCDE');
+    });
+
+    it('disable signs out locally without another server call', () => {
+      auth.login('a@b.com', 'x').subscribe();
+      http.expectOne('/api/v1/auth/login').flush(authResponse(1));
+      auth.mfaDisable('Passw0rdX', { recoveryCode: 'ABCDE-FGHJK' }).subscribe();
+      const req = http.expectOne('/api/v1/auth/mfa/disable');
+      expect(req.request.body).toEqual({ password: 'Passw0rdX', recoveryCode: 'ABCDE-FGHJK' });
+      req.flush(null, { status: 204, statusText: 'No Content' });
+      expect(auth.isAuthenticated()).toBe(false);
+      expect(auth.accessToken()).toBeNull();
+      expect(localStorage.getItem('tb.session.v1')).toBeNull();
+    });
+
+    it('status / setup / regenerate use the documented endpoints', () => {
+      auth.mfaStatus().subscribe();
+      http.expectOne({ method: 'GET', url: '/api/v1/auth/mfa' }).flush({ enabled: false, required: false, setupPending: false, recoveryCodesRemaining: 0, enabledAt: null });
+      auth.mfaSetup().subscribe();
+      http.expectOne({ method: 'POST', url: '/api/v1/auth/mfa/setup' }).flush({ secret: 'ABCD', otpAuthUri: 'otpauth://x', issuer: 'i', account: 'a' });
+      let codes: string[] = [];
+      auth.mfaRegenerateRecoveryCodes('123456').subscribe((c) => (codes = c));
+      const req = http.expectOne('/api/v1/auth/mfa/recovery-codes');
+      expect(req.request.body).toEqual({ code: '123456' });
+      req.flush({ recoveryCodes: ['AAAAA-BBBBB'] });
+      expect(codes).toEqual(['AAAAA-BBBBB']);
     });
   });
 });

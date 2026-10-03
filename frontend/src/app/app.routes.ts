@@ -27,6 +27,7 @@ export const routes: Routes = [
       { path: '', pathMatch: 'full', redirectTo: 'profile' },
       { path: 'profile', title: 'My profile', loadComponent: () => import('./features/account/profile.page').then((m) => m.ProfilePage) },
       { path: 'addresses', title: 'Address book', loadComponent: () => import('./features/account/addresses.page').then((m) => m.AddressesPage) },
+      { path: 'security', title: 'Security', loadComponent: () => import('./features/account/security/security.page').then((m) => m.SecurityPage) },
       { path: 'orders', title: 'My orders', loadComponent: () => import('./features/account/orders.page').then((m) => m.OrdersPage) },
       { path: 'orders/:number', title: 'Order details', loadComponent: () => import('./features/account/order-detail.page').then((m) => m.OrderDetailPage) },
     ],
