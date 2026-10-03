@@ -53,6 +53,8 @@ services:
       Seed__AdminPassword: ${SEED_ADMIN_PASSWORD:?set it in .env (copy .env.example)}
       ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=TechBazarBD;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;MultipleActiveResultSets=true"
       Jwt__Key: ${JWT_KEY:?set it in .env (copy .env.example)}
+      # Encrypts authenticator (MFA) secrets. Optional in this Development stack (a throw-away key is derived from Jwt__Key); REQUIRED in Production.
+      Mfa__SecretKey: ${MFA_SECRET_KEY:-}
       # The browser only ever talks to the storefront origin (it proxies /api and /uploads to this container).
       Payments__PublicApiBaseUrl: http://localhost:4000
       Payments__StorefrontBaseUrl: http://localhost:4000

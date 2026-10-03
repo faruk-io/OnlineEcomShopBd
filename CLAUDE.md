@@ -64,6 +64,14 @@ anything. Application never references Identity, ASP.NET or a DB provider.
   Host, with the token in the URL **fragment**. `forgot-password` must stay enumeration-safe: the controller only validates + enqueues (`IAccountJobs`),
   the background worker does the work; a test asserts 0 SQL commands on that request path. Validate the new password BEFORE spending the token; a reset
   revokes all sessions. Verification/reset are POST (never GET). Do not log tokens, addresses or passwords.
+- **MFA (TOTP)** (`IMfaService`/`MfaService`, `Totp`/`Base32` pure statics, `IMfaCrypto`; tables `MfaCredentials`, `MfaRecoveryCodes`): own RFC 6238 (verified against the
+  RFC vectors), steps -1..+1, a step is accepted ONCE (atomic `LastUsedStep` bump). Secrets are AES-256-GCM encrypted with `Mfa:SecretKey` (NOT in the DB; required outside
+  Development), recovery codes are HMAC-SHA256 hashed and single use. Login with MFA answers **202** + a single-use `MfaChallenge` `AccountToken` (never a JWT); only
+  `POST auth/mfa/verify` (anonymous, in the frozen allow-list) turns it into a session. Wrong codes call Identity `AccessFailed` and **a correct password must never reset
+  that counter** (only a completed second factor does). Sessions carry `amr` (`pwd`[, `mfa`]) and `RefreshToken.MfaVerified`, copied on rotation. `AdminOnly` = role +
+  `MfaRequirement` (`Mfa:EnforceForAdmins`, default true): an un-enrolled admin gets 403 `code: mfa_required` and can still reach `/auth/mfa/*` to enrol. Admins cannot disable MFA
+  (`mfa_required_for_role`); disabling needs password + code and ends all sessions; enabling ends all other sessions. Operator reset: `dotnet run --project src/TechBazar.Api -- mfa-reset <email>`.
+  Never log codes/secrets; MFA setup/enable/recovery responses are `Cache-Control: no-store`. Test factories set `Mfa:EnforceForAdmins=false` by default (opt in with `ApiFactory.WithConfig`).
 - Email: `IEmailSender` is `SmtpEmailSender` (MailKit) when `Email:Smtp:Host` is set, else the log-only sender (the API warns in Production). SMTP refuses credentials without TLS; recipients must be exactly one mailbox. Dev inbox: Mailpit (compose, :8025).
 - Secrets (JWT key, admin password, connection strings with passwords) live in
   **user-secrets / env vars**, never in git. Tests inject config in-memory.
@@ -125,6 +133,7 @@ dotnet restore && dotnet build
 dotnet test
 dotnet user-secrets --project src/TechBazar.Api set "Jwt:Key" "<>=32 random chars>"
 dotnet user-secrets --project src/TechBazar.Api set "Seed:AdminPassword" "<strong pw>"
+dotnet user-secrets --project src/TechBazar.Api set "Mfa:SecretKey" "$(openssl rand -base64 32)"   # required outside Development
 # optional SSLCommerz sandbox (https://developer.sslcommerz.com/registration/): never commit these
 dotnet user-secrets --project src/TechBazar.Api set "SslCommerz:StoreId" "<sandbox store id>"
 dotnet user-secrets --project src/TechBazar.Api set "SslCommerz:StorePassword" "<sandbox store password>"
@@ -156,6 +165,7 @@ SSR rejects unknown `Host` headers: add your domain(s) to `security.allowedHosts
 
 ## Roadmap
 Phase 1 (done): domain, migration, seed, catalog + auth APIs, tests, Angular scaffold.
+Phase 6 (done): TOTP MFA, mandatory for admins (`docs/security.md` Phase 6), recovery codes, `mfa-reset` CLI, security page with client-side QR.
 Phase 5 (done): password reset + email verification (`docs/security.md` Phase 5), SMTP sender, Mailpit dev inbox, optional verified-email checkout gate.
 Phase 4 (done): production hardening - OWASP review (`docs/security.md`: 16 findings fixed, each with a regression test), performance review
 (`docs/performance.md`), Playwright E2E, Dockerfiles + compose, GitHub Actions CI, ESLint + dotnet format gates.
@@ -163,4 +173,4 @@ Phase 3 (done): checkout (addresses, shipping, coupons), orders + tracking + ema
 server-side compatibility, Admin panel (dashboard, product/category/brand/coupon CRUD, uploads, order status).
 Phase 2 (done): storefront (home, listing with URL-synced filters, product, compare, wishlist, cart with guest→server
 merge, auth, profile, order-history placeholder) + cart/wishlist/profile/onSale APIs.
-Next: reviews (write), admin user management, refunds via gateway API, bKash/Nagad direct, MFA (admins first), change-password/change-email in the account page, image resizing/CDN, full-text search.
+Next: reviews (write), admin user management, refunds via gateway API, bKash/Nagad direct, WebAuthn/passkeys + MFA key rotation + step-up for sensitive admin actions, change-password/change-email in the account page, image resizing/CDN, full-text search.

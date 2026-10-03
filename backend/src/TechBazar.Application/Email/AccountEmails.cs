@@ -27,5 +27,10 @@ public static class AccountEmails
         $"<p>Hi {H(fullName)},</p><p>The password of your TechBazar BD account was just changed and you were signed out on all devices.</p>" +
         $"<p>If this was not you, <a href=\"{H(forgotPasswordLink)}\">reset it immediately</a> and contact support.</p>");
 
+    public static EmailMessage MfaChanged(string to, string fullName, string what, string forgotPasswordLink) => new(to,
+        "Two-step verification changed - TechBazar BD",
+        $"Hi {fullName},\n\n{what}\nIf this was not you, reset your password immediately: {forgotPasswordLink} and contact support.",
+        $"<p>Hi {H(fullName)},</p><p>{H(what)}</p><p>If this was not you, <a href=\"{H(forgotPasswordLink)}\">reset your password immediately</a> and contact support.</p>");
+
     private static string H(string s) => WebUtility.HtmlEncode(s);
 }

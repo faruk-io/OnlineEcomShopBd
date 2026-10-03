@@ -10,7 +10,16 @@ public sealed record RefreshRequest(string? RefreshToken);
 public sealed record LogoutRequest(string? RefreshToken);
 public sealed record UpdateProfileRequest(string FullName, string? Phone);
 
-public sealed record UserDto(Guid Id, string Email, string FullName, string? Phone, IReadOnlyList<string> Roles, bool EmailConfirmed = false);
+public sealed record UserDto(Guid Id, string Email, string FullName, string? Phone, IReadOnlyList<string> Roles, bool EmailConfirmed = false,
+    /// <summary>The account has a confirmed authenticator.</summary>
+    bool MfaEnabled = false,
+    /// <summary>Policy demands MFA for this account (Admin role while <c>Mfa:EnforceForAdmins</c>).</summary>
+    bool MfaRequired = false,
+    /// <summary>THIS session passed a second factor (the <c>amr</c> claim of the access token).</summary>
+    bool MfaSession = false);
+
+/// <summary>Either tokens, or (when the account has MFA) a challenge that must be completed via <c>mfa/verify</c>.</summary>
+public sealed record LoginResult(AuthResponse? Auth, TechBazar.Application.Mfa.MfaChallengeDto? Challenge);
 
 public sealed record AuthResponse(
     string AccessToken,
@@ -23,15 +32,19 @@ public sealed record AuthResponse(
 public interface IAuthService
 {
     Task<AuthResponse> RegisterAsync(RegisterRequest request, string? ipAddress, CancellationToken ct = default);
-    Task<AuthResponse> LoginAsync(LoginRequest request, string? ipAddress, CancellationToken ct = default);
+    Task<LoginResult> LoginAsync(LoginRequest request, string? ipAddress, CancellationToken ct = default);
+    /// <summary>Second step of an MFA login: trades the challenge + a code (or recovery code) for a session flagged <c>amr: mfa</c>.</summary>
+    Task<AuthResponse> CompleteMfaLoginAsync(TechBazar.Application.Mfa.MfaVerifyRequest request, string? ipAddress, CancellationToken ct = default);
+    /// <summary>Confirms the pending authenticator, ends all other sessions and returns recovery codes plus a fresh MFA-verified session.</summary>
+    Task<TechBazar.Application.Mfa.MfaEnabledDto> EnableMfaAsync(Guid userId, string code, string? ipAddress, CancellationToken ct = default);
     /// <summary>Rotates the refresh token: the presented one is revoked and a new pair is issued. Re-use of a revoked token revokes the whole chain.</summary>
     Task<AuthResponse> RefreshAsync(RefreshRequest request, string? ipAddress, CancellationToken ct = default);
     /// <summary>Revokes one refresh token by possession (no access token needed: it may already have expired). Idempotent, never reveals whether the token existed.</summary>
     Task LogoutAsync(string refreshToken, CancellationToken ct = default);
     /// <summary>"Sign out everywhere": revokes every live refresh token of the user.</summary>
     Task LogoutAllAsync(Guid userId, CancellationToken ct = default);
-    Task<UserDto> GetProfileAsync(Guid userId, CancellationToken ct = default);
-    Task<UserDto> UpdateProfileAsync(Guid userId, UpdateProfileRequest request, CancellationToken ct = default);
+    Task<UserDto> GetProfileAsync(Guid userId, bool mfaSession = false, CancellationToken ct = default);
+    Task<UserDto> UpdateProfileAsync(Guid userId, UpdateProfileRequest request, bool mfaSession = false, CancellationToken ct = default);
 }
 
 /// <summary>The single password policy used by registration and password reset (mirrors the Identity options).</summary>

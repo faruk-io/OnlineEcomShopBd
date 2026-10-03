@@ -147,6 +147,26 @@ public class AccountTokenConfiguration : IEntityTypeConfiguration<AccountToken>
     }
 }
 
+public class MfaCredentialConfiguration : IEntityTypeConfiguration<MfaCredential>
+{
+    public void Configure(EntityTypeBuilder<MfaCredential> b)
+    {
+        b.Property(x => x.EncryptedSecret).HasMaxLength(200).IsRequired();
+        b.HasIndex(x => x.UserId).IsUnique();   // at most one authenticator per account
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public class MfaRecoveryCodeConfiguration : IEntityTypeConfiguration<MfaRecoveryCode>
+{
+    public void Configure(EntityTypeBuilder<MfaRecoveryCode> b)
+    {
+        b.Property(x => x.CodeHash).HasMaxLength(64).IsRequired();
+        b.HasIndex(x => new { x.UserId, x.CodeHash }).IsUnique();   // the redeem lookup
+        b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
 public class OrderStatusHistoryConfiguration : IEntityTypeConfiguration<OrderStatusHistory>
 {
     public void Configure(EntityTypeBuilder<OrderStatusHistory> b)

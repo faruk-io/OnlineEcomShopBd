@@ -49,6 +49,7 @@ public class ApiFactory : WebApplicationFactory<Program>
     public const string AdminEmail = "admin@techbazar.test";
     public const string AdminPassword = "AdminPassw0rd!";
     public const string TestJwtKey = "integration-tests-signing-key-0123456789-abcdef";
+    public const string TestMfaKey = "ZTJlLXRlc3Qtb25seS1tZmEta2V5LTAxMjM0NTY3ODktYWJjZGVm";   // base64, 39 bytes
 
     private readonly SqliteConnection _connection = new("DataSource=:memory:");
     private readonly string _uploads = Path.Combine(Path.GetTempPath(), "tb-it-uploads-" + Guid.NewGuid().ToString("N"));
@@ -64,6 +65,8 @@ public class ApiFactory : WebApplicationFactory<Program>
         builder.ConfigureAppConfiguration((_, cfg) => cfg.AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["Jwt:Key"] = TestJwtKey,
+            ["Mfa:SecretKey"] = TestMfaKey,
+            ["Mfa:EnforceForAdmins"] = "false",   // MFA tests opt in; everything else logs in as admin with a password only
             ["RateLimiting:Auth:PermitLimit"] = _authPermitLimit.ToString(),
             ["RateLimiting:Auth:WindowSeconds"] = "60",
             ["RateLimiting:Public:PermitLimit"] = "10000",

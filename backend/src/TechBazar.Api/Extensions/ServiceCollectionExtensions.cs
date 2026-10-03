@@ -4,6 +4,7 @@ using System.Text;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
@@ -53,9 +54,11 @@ public static class ServiceCollectionExtensions
                 };
             });
         services.AddAuthorizationBuilder()
-            .AddPolicy(Policies.AdminOnly, p => p.RequireRole(Roles.Admin))
+            .AddPolicy(Policies.AdminOnly, p => p.RequireRole(Roles.Admin).AddRequirements(new MfaRequirement()))
             // Deny by default: an endpoint that forgets [Authorize] is NOT public. Anonymous endpoints must say [AllowAnonymous].
             .SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
+        services.AddSingleton<IAuthorizationHandler, MfaAuthorizationHandler>();
+        services.AddSingleton<IAuthorizationMiddlewareResultHandler, MfaAuthorizationResultHandler>();
         return services;
     }
 

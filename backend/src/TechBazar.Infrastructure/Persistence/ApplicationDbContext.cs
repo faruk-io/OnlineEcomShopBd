@@ -34,6 +34,8 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<PcBuildItem> PcBuildItems => Set<PcBuildItem>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<AccountToken> AccountTokens => Set<AccountToken>();
+    public DbSet<MfaCredential> MfaCredentials => Set<MfaCredential>();
+    public DbSet<MfaRecoveryCode> MfaRecoveryCodes => Set<MfaRecoveryCode>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {

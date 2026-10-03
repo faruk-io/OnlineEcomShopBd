@@ -86,10 +86,23 @@ npm run e2e                                                  # browse > filter >
 `.github/workflows/ci.yml` runs these as `backend`, `frontend`, `e2e` and `docker` jobs; Dependabot is configured. In the authoring sandbox set
 `PW_CHROMIUM_PATH` to a preinstalled Chromium (see the header of `frontend/playwright.config.ts`).
 
+### Two-step verification (MFA) - mandatory for admins
+TOTP (Google Authenticator, Microsoft Authenticator, Authy, 1Password, ...). **Administrators must use it**: after signing in with the password
+only, the admin API answers `403 mfa_required` and the app sends the admin to *Account > Security* to scan a QR code and confirm a first code
+(then 10 one-time recovery codes are shown once). Every other account can opt in on the same page.
+```bash
+# encrypts authenticator secrets at rest (required outside Development; Development derives one from Jwt:Key). Keep it out of git and out of DB backups.
+dotnet user-secrets --project src/TechBazar.Api set "Mfa:SecretKey" "$(openssl rand -base64 32)"
+# lost phone AND recovery codes (operator only): removes the second factor and ends all sessions
+dotnet run --project src/TechBazar.Api -- mfa-reset admin@techbazar.bd
+```
+First start: **sign in as the seeded admin and enrol straight away** (until then anyone with the password could enrol their own device).
+Details, threat table with regression tests and limits (no key rotation, TOTP is phishable): [`docs/security.md`](docs/security.md#phase-6-two-step-verification-totp-mandatory-for-administrators).
+
 ## Security & performance
 * [`docs/security.md`](docs/security.md): OWASP review, **every finding and fix with its regression test**, accepted risks, production checklist.
 * [`docs/performance.md`](docs/performance.md): measured query counts per endpoint, indexes, compression, bundle budgets.
-* Production configuration that matters: `Jwt__Key`, `Auth__RefreshCookie__Secure=Always`, `ForwardedHeaders__KnownNetworks__0=<your proxy CIDR>`,
+* Production configuration that matters: `Jwt__Key`, `Mfa__SecretKey`, `Auth__RefreshCookie__Secure=Always`, `ForwardedHeaders__KnownNetworks__0=<your proxy CIDR>`,
   `HSTS=1` (web), `Security__HttpsRedirection=false` (API behind a TLS proxy), `Swagger__Enabled` unset.
 
 ## Tests

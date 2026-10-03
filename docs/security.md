@@ -56,6 +56,49 @@ Operational requirements: set `Email__Smtp__Host/FromAddress` (+ `Username`/`Pas
 (the API warns at startup); set `Account__StorefrontBaseUrl`; `Account__RequireVerifiedEmailForCheckout=true` makes verification mandatory to order
 (default off, so existing flows are unchanged). Reset links are single-use and expire; users can always request a new one.
 
+## Phase 6: two-step verification (TOTP), mandatory for administrators
+
+Threat model: the attacker already knows (or phished/stuffed) a password, and may hold a database dump. A second factor must survive both, and
+must not become a new way to lock people out or to enumerate accounts.
+
+Design: RFC 6238 TOTP (own implementation, HMAC-SHA1, 6 digits, 30 s) so any authenticator app works; recovery codes; a session claim
+(`amr: pwd` / `amr: pwd, mfa`, RFC 8176) that the `AdminOnly` policy checks. Enforcement is `Mfa:EnforceForAdmins` (default **true**); every
+other account can opt in.
+
+| Threat | Control | Proof |
+|---|---|---|
+| Correct password alone opens an admin session | login with MFA answers **202** + single-use challenge, never a token/cookie; `AdminOnly` additionally requires `amr: mfa`, so an admin who never enrolled gets 403 `code: mfa_required` on `/api/v1/admin/*` | `Login_WithMfa_Answers202…`, `AnAdminWithoutASecondFactor…`, `AnAdminCanStillReachTheEnrolmentEndpoints…`; mutation: dropping the requirement fails 2 tests |
+| Forged `amr` claim | claims are inside the signed JWT (HS256 pinned) | `ATokenWithAForgedMfaClaimIsRejected…` |
+| Challenge used as a bearer token / for another purpose | challenge is an `AccountToken` of purpose `MfaChallenge` (256-bit, SHA-256 at rest, 5 min, bound to the account email); it is not a JWT | `TheChallengeTokenIsNotABearerToken`, `OnlyAnMfaChallengeWorks…`, `AChallengeDiesWhenTheAccountEmailChanges`, `AnExpiredChallengeIsRefused…` |
+| Challenge redeemed twice / concurrently | atomic `UPDATE … WHERE UsedAt IS NULL` | `AChallengeCompletesExactlyOneLogin`, `TwoSimultaneousRedemptions…` (race: kills the mutant in ~2 of 3 runs, inherently probabilistic) |
+| Code guessing (10^6 space) | every wrong code calls Identity `AccessFailed` (5 failures = 15 min lockout, shared with passwords) and **a correct password does not reset the counter** (only a completed second factor does); `auth` rate limit per IP on top | `WrongCodesFeedTheLockout_AndACorrectPasswordDoesNotResetIt`, `ASuccessfulSecondFactorResetsTheFailureCounter`; mutations (count removed / reset added) each fail 1 test |
+| Shoulder-surfed / intercepted code replayed inside its 90 s window | `LastUsedStep` bumped atomically (`UPDATE … WHERE LastUsedStep < @step`): a step is accepted once; the code used to enable cannot log in | `ACodeWorksOnce…`, `TheCodeUsedToEnableCannotImmediatelyLogYouIn`; mutation: removing it fails 2 tests |
+| Clock-skew abuse | window is exactly steps -1..+1; every candidate is compared in constant time with no early exit | unit `Verify_AcceptsThePreviousCurrentAndNextStep_ButNothingFurther`, API `ACodeFromTwoStepsAgoIsRejected…` |
+| TOTP implementation bugs | verified against RFC 4226 (10 vectors) and RFC 6238 (6 vectors), Base32 against RFC 4648 | `TotpTests`, `Base32Tests` |
+| Database / backup leak yields authenticator secrets or recovery codes | secrets are AES-256-GCM encrypted with a key that is **not** in the database (`Mfa:SecretKey`, HKDF sub-keys), the user id is authenticated data (a ciphertext copied to another row fails), recovery codes are stored as HMAC-SHA256 (keyed, user-bound; a bare hash would be brute-forceable at 50 bits) | `MfaCryptoTests` (bit-flip at every byte, other user, other key), `TheDatabaseNeverHoldsTheSecretOrARecoveryCodeInTheClear` |
+| Recovery code reuse / theft | single use through an atomic update, 50 bits each, shown once, regenerating replaces all of them and needs a *current authenticator code*; use of one emails the owner | `ARecoveryCodeSignsYouIn_Once…`, `RegeneratingNeedsACurrentCode…`; mutation (reusable) fails 3 tests |
+| Stolen session removes the second factor | disabling needs **password and a code**, feeds the lockout, ends every session, and is refused outright for roles that must use MFA (403 `mfa_required_for_role`) | `Disable_NeedsThePasswordAndACode…`, `AdministratorsCannotTurnMfaOff`; mutation fails 1 test |
+| Sessions that pre-date enrolment survive it | enabling revokes every refresh token and returns a fresh MFA-verified session | `Enable_ReturnsTenWellFormedRecoveryCodes_AStrongSession_AndEndsTheOlderSessions`; mutation fails 1 test |
+| Refresh silently upgrades/downgrades a session | `RefreshToken.MfaVerified` is copied on rotation | `RefreshKeepsTheSessionStrength…`; mutation (always true) fails 1 test |
+| Setup secret cached / logged | `Cache-Control: no-store` on setup/enable/recovery responses; no secret, code or recovery code is logged (only user ids) | `Setup_ReturnsTheSecret…NotCached…` |
+| Account enumeration through the MFA step | the challenge is only reachable after a **correct** password; unknown users and wrong passwords get the same 401 as before | `Login_WithAWrongPassword_NeverReachesTheChallenge` |
+| Silent takeover | enable / disable / regenerate / recovery-code sign-in each email the owner | `ARecoveryCodeSignsYouIn_Once_AndTheOwnerIsToldAboutIt`, `Disable_…` |
+
+Operational requirements
+- **`Mfa__SecretKey`** (base64, >= 32 bytes: `openssl rand -base64 32`) is **required outside Development** (the API refuses to start without it);
+  Development derives a throw-away key from `Jwt:Key`. Keep it in a secret store, separate from the database backups. **There is no key rotation yet:**
+  changing it makes every stored secret undecryptable (logged as an error; those users fail the second factor) until each is reset with the CLI below.
+- **Bootstrap:** until an admin has enrolled, anyone who knows the admin password can enrol *their own* authenticator on it (the enrolment
+  endpoints only need a session). Enrol the seeded admin immediately after first start (before the site is public), and use a strong,
+  secret-store-supplied `Seed__AdminPassword`.
+- **Lost phone *and* recovery codes:** `dotnet run --project src/TechBazar.Api -- mfa-reset <email>` (operator with access to the server config)
+  removes the factor and ends all sessions; the admin then signs in with the password and enrols again. No self-service path exists on purpose.
+- `Mfa__EnforceForAdmins=false` exists for emergencies and tests only.
+
+Not covered (be aware): TOTP is phishable in real time (a look-alike site can relay the code; WebAuthn/passkeys would fix that), there is no
+"remember this device", no step-up re-authentication for sensitive admin actions, and access tokens already issued stay valid for up to 15 minutes
+after MFA is disabled or reset (same trade-off as logout).
+
 ## Checked and found sound (with evidence)
 - **SQL injection (A03)**: zero raw SQL (`FromSql*`/`ExecuteSql*` grep); EF parameterises everything; `LIKE` input is escaped (`TextSearch.Escape`, `%`/`_`/`[` tested). 14 hostile payloads (`'; DROP TABLE…`, `' OR '1'='1`, `WAITFOR`, `%`, `[a-z]`, 5 000 chars, …) x 10 endpoints never return 5xx or change data (`HostileInputNeverCausesServerErrors_OrChangesData`).
 - **XSS (A03)**: no `innerHTML`/`bypassSecurityTrust*`/`document.write` in the app (grep); JSON-LD escapes `<`; email HTML is encoded; Angular templates escape by default; CSP above is the backstop.
@@ -71,7 +114,7 @@ Operational requirements: set `Email__Smtp__Host/FromAddress` (+ `Username`/`Pas
 - Access tokens stay valid until they expire (15 min) after logout / deactivation: no per-request user lookup (would add a DB hit per call).
 - XSS cannot *steal* the refresh cookie, but script running in the page can still call `/auth/refresh` and act as the user while the page is open. The CSP is the control for that.
 - `style-src 'unsafe-inline'` (Angular component styles). Styles cannot execute script.
-- No MFA yet. Registration reveals whether an email exists (409); a locked account says so. Email is the root of trust for recovery: whoever controls the mailbox controls the account (standard for e-commerce; add MFA for admins before launch).
+- MFA is TOTP only and mandatory for admins (Phase 6, above). Registration reveals whether an email exists (409); a locked account says so. Email is the root of trust for recovery: whoever controls the mailbox controls the account (standard for e-commerce; customers can opt in to MFA, admins must).
 - A reset link that was already used shows the password form first and only reports "invalid or expired" after submit (the page cannot know without a token-validity oracle; the token is 256-bit so one could be added safely, but it is not needed).
 - Pending "forgot password" jobs live in memory and are lost on shutdown (the user just asks again).
 - `AllowedHosts` is `*` (the API builds no URLs from the Host header; the SSR server enforces `allowedHosts`).
@@ -81,7 +124,7 @@ Operational requirements: set `Email__Smtp__Host/FromAddress` (+ `Username`/`Pas
 - Not executed in this sandbox: Docker builds (no daemon), GitHub Actions, SQL Server (translation is compiled in unit tests), SSLCommerz sandbox.
 
 ## Production checklist
-1. `Jwt__Key` (>= 32 random chars), DB password, `Seed__AdminPassword` from a secret store; seeding off (`Seed__Enabled=false`).
+1. `Jwt__Key` (>= 32 random chars), `Mfa__SecretKey` (`openssl rand -base64 32`), DB password, `Seed__AdminPassword` from a secret store; seeding off (`Seed__Enabled=false`). Enrol the admin's authenticator before going public.
 2. TLS terminates at your proxy: set `Auth__RefreshCookie__Secure=Always`, `HSTS=1` on the web container, `Security__HttpsRedirection=false` on the API.
 3. `ForwardedHeaders__KnownNetworks__0=<proxy/CIDR>` (or `KnownProxies`) on the API; watch for the startup warning.
 4. `Cors__AllowedOrigins`, `Payments__PublicApiBaseUrl`, `Payments__StorefrontBaseUrl`, `NG_ALLOWED_HOSTS` set to the real domains.

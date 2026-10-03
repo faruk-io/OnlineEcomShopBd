@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using TechBazar.Api.Extensions;
 using TechBazar.Application.Auth;
 using TechBazar.Application.Common;
+using TechBazar.Application.Mfa;
 
 namespace TechBazar.Api.Controllers;
 
@@ -18,7 +19,7 @@ namespace TechBazar.Api.Controllers;
 /// </list>
 /// </summary>
 [EnableRateLimiting(Policies.AuthRateLimit)]
-public sealed class AuthController(IAuthService auth, IAccountService account, IAccountJobs jobs, IConfiguration config) : ApiControllerBase
+public sealed class AuthController(IAuthService auth, IAccountService account, IAccountJobs jobs, IMfaService mfa, IConfiguration config) : ApiControllerBase
 {
     public const string CookieName = "tb_rt";
     public const string ModeHeader = "X-Refresh-Mode";
@@ -41,9 +42,72 @@ public sealed class AuthController(IAuthService auth, IAccountService account, I
     [HttpPost("login")]
     [AllowAnonymous]
     [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(MfaChallengeDto), StatusCodes.Status202Accepted)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
-    public async Task<ActionResult<AuthResponse>> Login(LoginRequest request, CancellationToken ct) =>
-        Ok(Deliver(await auth.LoginAsync(request, Ip, ct)));
+    public async Task<IActionResult> Login(LoginRequest request, CancellationToken ct)
+    {
+        var result = await auth.LoginAsync(request, Ip, ct);
+        // 202 = "password accepted, second factor still required": the body is a single-use challenge, NOT a session.
+        return result.Challenge is { } challenge ? Accepted(challenge) : Ok(Deliver(result.Auth!));
+    }
+
+    // ------------------------------------------------------------------ two-step verification (TOTP)
+    /// <summary>Completes a login that answered 202: challenge + authenticator code (or a recovery code) -> MFA-verified session.</summary>
+    [HttpPost("mfa/verify")]
+    [AllowAnonymous]
+    [ProducesResponseType(typeof(AuthResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<AuthResponse>> MfaVerify(MfaVerifyRequest request, CancellationToken ct) =>
+        Ok(Deliver(await auth.CompleteMfaLoginAsync(request, Ip, ct)));
+
+    [HttpGet("mfa")]
+    [Authorize]
+    [ProducesResponseType(typeof(MfaStatusDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<MfaStatusDto>> MfaStatus(CancellationToken ct) => Ok(await mfa.GetStatusAsync(CurrentUserId, ct));
+
+    /// <summary>Starts enrolment: returns the secret (and otpauth URI for the QR code) ONCE; nothing is enforced until <c>mfa/enable</c> succeeds.</summary>
+    [HttpPost("mfa/setup")]
+    [Authorize]
+    [ProducesResponseType(typeof(MfaSetupDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<MfaSetupDto>> MfaSetup(CancellationToken ct)
+    {
+        Response.Headers.CacheControl = "no-store";   // the response carries the shared secret
+        return Ok(await mfa.BeginSetupAsync(CurrentUserId, ct));
+    }
+
+    /// <summary>Confirms the first code. Returns the recovery codes (shown once) and a new MFA-verified session; all older sessions are ended.</summary>
+    [HttpPost("mfa/enable")]
+    [Authorize]
+    [ProducesResponseType(typeof(MfaEnabledDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<MfaEnabledDto>> MfaEnable(MfaCodeRequest request, CancellationToken ct)
+    {
+        Response.Headers.CacheControl = "no-store";
+        var result = await auth.EnableMfaAsync(CurrentUserId, request.Code, Ip, ct);
+        return Ok(result with { Auth = Deliver(result.Auth) });
+    }
+
+    /// <summary>Needs the password and a current code (or recovery code). Refused (403 <c>mfa_required_for_role</c>) for administrators. Ends every session.</summary>
+    [HttpPost("mfa/disable")]
+    [Authorize]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> MfaDisable(MfaDisableRequest request, CancellationToken ct)
+    {
+        await mfa.DisableAsync(CurrentUserId, request.Password, request.Code, request.RecoveryCode, ct);
+        if (CookieMode) ClearCookie();
+        return NoContent();
+    }
+
+    [HttpPost("mfa/recovery-codes")]
+    [Authorize]
+    [ProducesResponseType(typeof(RecoveryCodesDto), StatusCodes.Status200OK)]
+    public async Task<ActionResult<RecoveryCodesDto>> MfaRecoveryCodes(MfaCodeRequest request, CancellationToken ct)
+    {
+        Response.Headers.CacheControl = "no-store";
+        return Ok(new RecoveryCodesDto(await mfa.RegenerateRecoveryCodesAsync(CurrentUserId, request.Code, ct)));
+    }
 
     /// <summary>
     /// Exchange a refresh token (body, or the HttpOnly cookie in cookie mode) for a new access + refresh token pair; the old refresh token is revoked.
@@ -150,13 +214,13 @@ public sealed class AuthController(IAuthService auth, IAccountService account, I
     [HttpGet("me")]
     [Authorize]
     [ProducesResponseType(typeof(UserDto), StatusCodes.Status200OK)]
-    public async Task<ActionResult<UserDto>> Me(CancellationToken ct) => Ok(await auth.GetProfileAsync(CurrentUserId, ct));
+    public async Task<ActionResult<UserDto>> Me(CancellationToken ct) => Ok(await auth.GetProfileAsync(CurrentUserId, User.HasClaim("amr", "mfa"), ct));
 
     [HttpPut("me")]
     [Authorize]
     [ProducesResponseType(typeof(UserDto), StatusCodes.Status200OK)]
     public async Task<ActionResult<UserDto>> UpdateMe(UpdateProfileRequest request, CancellationToken ct) =>
-        Ok(await auth.UpdateProfileAsync(CurrentUserId, request, ct));
+        Ok(await auth.UpdateProfileAsync(CurrentUserId, request, User.HasClaim("amr", "mfa"), ct));
 
     private Guid CurrentUserId =>
         Guid.TryParse(User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value, out var id) ? id : throw new AuthenticationFailedException("Invalid token.");

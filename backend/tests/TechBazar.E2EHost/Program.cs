@@ -29,6 +29,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseUrls($"http://localhost:{port}");
 builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
 {
+    ["Mfa:SecretKey"] = "ZTJlLXRlc3Qtb25seS1tZmEta2V5LTAxMjM0NTY3ODktYWJjZGVm",   // test-only; base64 of 39 bytes
     ["Jwt:Key"] = "e2e-test-only-signing-key-0123456789-abcdefghij",
     ["Seed:AdminPassword"] = "AdminPassw0rd!",
     ["ConnectionStrings:DefaultConnection"] = "unused-in-e2e",

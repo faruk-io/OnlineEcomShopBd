@@ -45,6 +45,10 @@ public sealed class GlobalExceptionHandler(
                 problem = Create(StatusCodes.Status403Forbidden, "Email not verified.", "Please verify your email address to continue. Check your inbox or request a new link.");
                 problem.Extensions["code"] = "email_not_verified";   // lets the UI show the right prompt without parsing text
                 break;
+            case ForbiddenException fe:
+                problem = Create(StatusCodes.Status403Forbidden, "Forbidden.", fe.Message);
+                problem.Extensions["code"] = fe.Code;
+                break;
             case AuthenticationFailedException:
                 problem = Create(StatusCodes.Status401Unauthorized, "Authentication failed.", exception.Message);
                 break;

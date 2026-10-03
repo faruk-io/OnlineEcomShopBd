@@ -83,6 +83,26 @@ public class QueryBudgetTests(ApiFactory factory, ITestOutputHelper output) : IC
 
     // ------------------------------------------------------------------ shopping & orders
     [Fact]
+    public async Task Mfa_StatusAndProfile_QueryCountIsConstant_RegardlessOfRecoveryCodes()
+    {
+        var token = await NewUserToken();
+        var profileOff = await Queries(() => _client.SendAsync(Req(HttpMethod.Get, "/api/v1/auth/me", token)), "GET /auth/me (no MFA)");
+        var statusOff = await Queries(() => _client.SendAsync(Req(HttpMethod.Get, "/api/v1/auth/mfa", token)), "GET /auth/mfa (no MFA)");
+
+        var setup = await (await _client.SendAsync(Req(HttpMethod.Post, "/api/v1/auth/mfa/setup", token, new { }))).ReadAsync<TechBazar.Application.Mfa.MfaSetupDto>();
+        Assert.True(TechBazar.Application.Mfa.Base32.TryDecode(setup.Secret, out var secret));
+        var code = TechBazar.Application.Mfa.Totp.Compute(secret, TechBazar.Application.Mfa.Totp.StepAt(DateTimeOffset.UtcNow) - 1);
+        var enabled = await (await _client.SendAsync(Req(HttpMethod.Post, "/api/v1/auth/mfa/enable", token, new { code }))).ReadAsync<TechBazar.Application.Mfa.MfaEnabledDto>();
+
+        // 10 recovery codes now exist: the status must still be a fixed number of aggregate queries, not one per code
+        var profileOn = await Queries(() => _client.SendAsync(Req(HttpMethod.Get, "/api/v1/auth/me", enabled.Auth.AccessToken)), "GET /auth/me (MFA, 10 codes)");
+        var statusOn = await Queries(() => _client.SendAsync(Req(HttpMethod.Get, "/api/v1/auth/mfa", enabled.Auth.AccessToken)), "GET /auth/mfa (MFA, 10 codes)");
+        Assert.True(profileOn - profileOff <= 1, $"/auth/me grew from {profileOff} to {profileOn}");
+        Assert.True(statusOn - statusOff <= 1, $"/auth/mfa grew from {statusOff} to {statusOn}");
+        Assert.True(statusOn <= 6, $"/auth/mfa used {statusOn} commands");
+    }
+
+    [Fact]
     public async Task Cart_QueryCountDoesNotGrowWithTheNumberOfLines()
     {
         var token = await NewUserToken();

@@ -12,3 +12,9 @@ public class InvalidTokenException() : Exception("This link is invalid or has ex
 
 /// <summary>The action needs a verified email address (see <c>Account:RequireVerifiedEmailForCheckout</c>).</summary>
 public class EmailNotVerifiedException() : Exception("Please verify your email address to continue.");
+
+/// <summary>An action is understood but refused (403) with a machine-readable <see cref="Code"/> the UI can react to.</summary>
+public class ForbiddenException(string message, string code) : Exception(message)
+{
+    public string Code { get; } = code;
+}

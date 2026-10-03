@@ -118,6 +118,16 @@ if (app.Environment.IsProduction() && !app.Configuration.GetSection("ForwardedHe
     app.Logger.LogWarning("ForwardedHeaders:KnownProxies/KnownNetworks are not configured: behind a reverse proxy every client shares the proxy's IP, " +
                           "so per-IP rate limits become global. Configure the proxy addresses (see docs/security.md).");
 
+// Operator CLI: dotnet run --project src/TechBazar.Api -- mfa-reset <email>   (account whose authenticator AND recovery codes are lost)
+if (args is ["mfa-reset", var resetEmail])
+{
+    using var cli = app.Services.CreateScope();
+    var reset = await cli.ServiceProvider.GetRequiredService<TechBazar.Application.Mfa.IMfaService>().ResetAsync(resetEmail);
+    Console.WriteLine(reset ? $"MFA removed and all sessions ended for {resetEmail}." : $"No account found for {resetEmail}.");
+    Log.CloseAndFlush();
+    Environment.Exit(reset ? 0 : 1);
+}
+
 await InitialiseDatabaseAsync(app);
 app.Run();
 

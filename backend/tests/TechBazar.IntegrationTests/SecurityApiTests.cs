@@ -62,7 +62,7 @@ public class SecurityApiTests(ApiFactory factory) : IClassFixture<ApiFactory>
         "GET /api/v1/pc-builder/builds/{code}", "GET /api/v1/pc-builder/slots", "POST /api/v1/pc-builder/builds", "POST /api/v1/pc-builder/evaluate",
         "GET /api/v1/products", "GET /api/v1/products/facets", "GET /api/v1/products/{slug}", "GET /api/v1/products/{slug}/related",
         "GET /api/v1/search", "GET /api/v1/search/autocomplete",
-        "POST /api/v1/auth/forgot-password", "POST /api/v1/auth/login", "POST /api/v1/auth/logout", "POST /api/v1/auth/refresh", "POST /api/v1/auth/register",
+        "POST /api/v1/auth/forgot-password", "POST /api/v1/auth/login", "POST /api/v1/auth/mfa/verify", "POST /api/v1/auth/logout", "POST /api/v1/auth/refresh", "POST /api/v1/auth/register",
         "POST /api/v1/auth/reset-password", "POST /api/v1/auth/verify-email",
         "POST /api/v1/cart/preview",
         "POST /api/v1/payments/{gateway}/cancel", "POST /api/v1/payments/{gateway}/fail", "POST /api/v1/payments/{gateway}/ipn", "POST /api/v1/payments/{gateway}/success",

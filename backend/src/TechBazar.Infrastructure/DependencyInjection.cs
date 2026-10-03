@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using TechBazar.Application.Abstractions;
 using TechBazar.Application.Auth;
 using TechBazar.Application.Email;
+using TechBazar.Application.Mfa;
 using TechBazar.Application.Orders;
 using TechBazar.Application.Payments;
 using TechBazar.Application.Storage;
@@ -55,6 +56,13 @@ public static class DependencyInjection
         services.AddSingleton<AccountJobQueue>();
         services.AddSingleton<TechBazar.Application.Auth.IAccountJobs>(sp => sp.GetRequiredService<AccountJobQueue>());
         services.AddHostedService<AccountJobWorker>();
+        services.AddOptions<MfaOptions>().Bind(configuration.GetSection(MfaOptions.SectionName));
+        // Fails fast at startup (first resolution of the singleton) when Mfa:SecretKey is missing/short outside Development.
+        services.AddSingleton<IMfaCrypto>(sp => MfaCrypto.FromOptions(
+            sp.GetRequiredService<IOptions<MfaOptions>>().Value,
+            sp.GetRequiredService<IOptions<JwtOptions>>().Value.Key,
+            allowDerived: sp.GetService<Microsoft.Extensions.Hosting.IHostEnvironment>()?.EnvironmentName == "Development"));
+        services.AddScoped<IMfaService, MfaService>();
         services.AddOptions<ShippingOptions>().Bind(configuration.GetSection(ShippingOptions.SectionName));
         services.AddOptions<PaymentOptions>().Bind(configuration.GetSection(PaymentOptions.SectionName));
         services.AddOptions<SslCommerzOptions>().Bind(configuration.GetSection(SslCommerzOptions.SectionName));

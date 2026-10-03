@@ -25,4 +25,4 @@ public enum PaymentAttemptStatus { Pending = 1, Paid = 2, Failed = 3, Cancelled 
 public enum BuildSlot { Cpu = 1, Motherboard = 2, Ram = 3, Storage = 4, Gpu = 5, Psu = 6, Case = 7, Cooler = 8, Monitor = 9 }
 
 /// <summary>What a one-time emailed link may be used for. A token of one purpose is worthless for the other.</summary>
-public enum AccountTokenPurpose { EmailVerification = 1, PasswordReset = 2 }
+public enum AccountTokenPurpose { EmailVerification = 1, PasswordReset = 2, MfaChallenge = 3 }
