@@ -17,6 +17,7 @@ public static class Policies
 {
     public const string Cors = "Frontend";
     public const string AuthRateLimit = "auth";
+    public const string PublicRateLimit = "public";
     public const string CatalogCache = "Catalog";
     public const string AutocompleteCache = "Autocomplete";
     public const string AdminOnly = "AdminOnly";
@@ -70,6 +71,11 @@ public static class ServiceCollectionExtensions
             o.AddPolicy(Policies.AuthRateLimit, ctx => RateLimitPartition.GetFixedWindowLimiter(
                 ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
                 _ => new FixedWindowRateLimiterOptions { PermitLimit = permit, Window = window, QueueLimit = 0, AutoReplenishment = true }));
+            // Anonymous write-ish endpoints (payment callbacks, saving builds): generous but bounded per IP.
+            var publicPermit = cfg.GetValue("RateLimiting:Public:PermitLimit", 60);
+            o.AddPolicy(Policies.PublicRateLimit, ctx => RateLimitPartition.GetFixedWindowLimiter(
+                "pub:" + (ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown"),
+                _ => new FixedWindowRateLimiterOptions { PermitLimit = publicPermit, Window = window, QueueLimit = 0, AutoReplenishment = true }));
             o.OnRejected = async (context, ct) =>
             {
                 if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retry))

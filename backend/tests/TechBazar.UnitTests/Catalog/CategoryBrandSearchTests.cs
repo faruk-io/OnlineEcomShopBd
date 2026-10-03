@@ -19,7 +19,7 @@ public class CategoryBrandSearchTests(TestDatabase db) : IClassFixture<TestDatab
 
         var component = tree.Single(r => r.Slug == "component");
         Assert.Equal(
-            ["processor", "motherboard", "ram", "ssd", "graphics-card", "power-supply", "casing"],
+            ["processor", "motherboard", "ram", "ssd", "graphics-card", "power-supply", "casing", "cpu-cooler"],
             component.Children.Select(c => c.Slug));
     }
 
@@ -38,7 +38,7 @@ public class CategoryBrandSearchTests(TestDatabase db) : IClassFixture<TestDatab
     public async Task CategoryBySlug_ReturnsBreadcrumbsAndChildren()
     {
         var c = await Get(sp => sp.GetRequiredService<ICategoryService>().GetBySlugAsync("component"));
-        Assert.Equal(7, c.Children.Count);
+        Assert.Equal(8, c.Children.Count);
 
         var leaf = await Get(sp => sp.GetRequiredService<ICategoryService>().GetBySlugAsync("graphics-card"));
         Assert.Equal(["Component", "Graphics Card"], leaf.Breadcrumbs.Select(b => b.Name));

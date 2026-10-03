@@ -48,8 +48,9 @@ public class Address : BaseEntity
     public bool IsDefault { get; set; }
 }
 
-public class Coupon : BaseEntity
+public class Coupon : BaseEntity, IVersioned
 {
+    public int Version { get; set; }
     public string Code { get; set; } = default!;
     public string? Description { get; set; }
     public DiscountType DiscountType { get; set; }
@@ -68,6 +69,8 @@ public class Order : BaseEntity
     public string OrderNumber { get; set; } = default!;
     public Guid UserId { get; set; }
     public OrderStatus Status { get; set; } = OrderStatus.Pending;
+    public ShippingMethod ShippingMethod { get; set; }
+    public string ContactEmail { get; set; } = default!;
     public PaymentMethod PaymentMethod { get; set; }
     public PaymentStatus PaymentStatus { get; set; } = PaymentStatus.Unpaid;
 
@@ -88,6 +91,8 @@ public class Order : BaseEntity
     public string? ShipPostalCode { get; set; }
 
     public ICollection<OrderItem> Items { get; set; } = new List<OrderItem>();
+    public ICollection<OrderStatusHistory> History { get; set; } = new List<OrderStatusHistory>();
+    public ICollection<Payment> Payments { get; set; } = new List<Payment>();
 }
 
 public class OrderItem : BaseEntity
@@ -101,4 +106,55 @@ public class OrderItem : BaseEntity
     public decimal UnitPrice { get; set; }
     public int Quantity { get; set; }
     public decimal LineTotal { get; set; }
+    /// <summary>True when placing the order took units from stock (pre-orders do not), so cancelling knows whether to put them back.</summary>
+    public bool StockDecremented { get; set; }
+}
+
+/// <summary>One row per status change; drives the tracking timeline.</summary>
+public class OrderStatusHistory : BaseEntity
+{
+    public int OrderId { get; set; }
+    public Order Order { get; set; } = default!;
+    public OrderStatus Status { get; set; }
+    public string? Note { get; set; }
+    /// <summary>Who changed it (null = system / customer action recorded by the system).</summary>
+    public Guid? ChangedByUserId { get; set; }
+}
+
+/// <summary>A payment attempt for an order. <see cref="TransactionId"/> is OUR unique reference sent to the gateway.</summary>
+public class Payment : BaseEntity, IVersioned
+{
+    public int Version { get; set; }
+    public int OrderId { get; set; }
+    public Order Order { get; set; } = default!;
+    public string Gateway { get; set; } = default!;
+    public PaymentMethod Method { get; set; }
+    /// <summary>Amount in BDT calculated by the server when the attempt was created (the only amount ever accepted).</summary>
+    public decimal Amount { get; set; }
+    public string Currency { get; set; } = "BDT";
+    public PaymentAttemptStatus Status { get; set; } = PaymentAttemptStatus.Pending;
+    public string TransactionId { get; set; } = default!;
+    /// <summary>Gateway-side identifiers (val_id / bank_tran_id), set when the payment is validated.</summary>
+    public string? GatewayReference { get; set; }
+    public string? FailureReason { get; set; }
+    public DateTime? PaidAt { get; set; }
+}
+
+/// <summary>A saved / shareable PC Builder configuration.</summary>
+public class PcBuild : BaseEntity
+{
+    public string ShareCode { get; set; } = default!;
+    public string? Name { get; set; }
+    public Guid? UserId { get; set; }
+    public ICollection<PcBuildItem> Items { get; set; } = new List<PcBuildItem>();
+}
+
+public class PcBuildItem : BaseEntity
+{
+    public int PcBuildId { get; set; }
+    public PcBuild PcBuild { get; set; } = default!;
+    public BuildSlot Slot { get; set; }
+    public int ProductId { get; set; }
+    public Product Product { get; set; } = default!;
+    public int Quantity { get; set; } = 1;
 }

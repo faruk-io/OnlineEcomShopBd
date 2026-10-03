@@ -52,6 +52,7 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
         b.Property(x => x.WarrantyDetails).HasMaxLength(500);
         b.Property(x => x.StockStatus).HasConversion<int>();
         b.Property(x => x.RatingAverage).HasPrecision(3, 2);
+        b.Property(x => x.Version).IsConcurrencyToken();
         // Price, DiscountPrice, EffectivePrice -> decimal(18,2) via global convention.
 
         b.HasUniqueActiveIndex(x => x.Slug);

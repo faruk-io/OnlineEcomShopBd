@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc.ApplicationModels;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Options;
 using Serilog;
 using TechBazar.Api.Extensions;
@@ -10,6 +11,8 @@ using TechBazar.Application;
 using TechBazar.Infrastructure;
 using TechBazar.Infrastructure.Persistence;
 using TechBazar.Infrastructure.Seeding;
+using TechBazar.Infrastructure.Storage;
+using TechBazar.Api.Controllers;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -32,7 +35,9 @@ builder.Services.AddProblemDetails(o => o.CustomizeProblemDetails = ctx =>
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
 builder.Services.AddApplication();
+builder.Services.AddScoped<CatalogCache>();
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.PostConfigure<StorageOptions>(o => o.RootPath ??= Path.Combine(builder.Environment.ContentRootPath, "uploads"));
 builder.Services.AddJwtAuth();
 builder.Services.AddCorsFromConfig();
 builder.Services.AddAppRateLimiting();
@@ -55,6 +60,21 @@ app.UseSwaggerUI(c =>
 
 if (!app.Environment.IsDevelopment()) app.UseHsts();
 app.UseHttpsRedirection();
+// Admin-uploaded images. Served with nosniff + long cache; the file names are server generated GUIDs.
+var storage = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<StorageOptions>>().Value;
+Directory.CreateDirectory(storage.RootPath!);
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(storage.RootPath!),
+    RequestPath = storage.RequestPath,
+    ServeUnknownFileTypes = false,
+    OnPrepareResponse = ctx =>
+    {
+        ctx.Context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+        ctx.Context.Response.Headers.CacheControl = "public,max-age=31536000,immutable";
+    },
+});
+
 app.UseCors(Policies.Cors);
 app.UseRateLimiter();
 app.UseAuthentication();

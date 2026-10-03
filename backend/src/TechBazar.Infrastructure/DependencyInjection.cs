@@ -4,6 +4,13 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TechBazar.Application.Abstractions;
 using TechBazar.Application.Auth;
+using TechBazar.Application.Email;
+using TechBazar.Application.Orders;
+using TechBazar.Application.Payments;
+using TechBazar.Application.Storage;
+using TechBazar.Infrastructure.Email;
+using TechBazar.Infrastructure.Payments;
+using TechBazar.Infrastructure.Storage;
 using TechBazar.Infrastructure.Identity;
 using TechBazar.Infrastructure.Persistence;
 using TechBazar.Infrastructure.Seeding;
@@ -41,6 +48,17 @@ public static class DependencyInjection
             })
             .AddRoles<ApplicationRole>()
             .AddEntityFrameworkStores<ApplicationDbContext>();
+
+        services.AddOptions<ShippingOptions>().Bind(configuration.GetSection(ShippingOptions.SectionName));
+        services.AddOptions<PaymentOptions>().Bind(configuration.GetSection(PaymentOptions.SectionName));
+        services.AddOptions<SslCommerzOptions>().Bind(configuration.GetSection(SslCommerzOptions.SectionName));
+        services.AddOptions<StorageOptions>().Bind(configuration.GetSection(StorageOptions.SectionName));
+
+        services.AddSingleton<IEmailSender, LoggingEmailSender>();
+        services.AddSingleton<IFileStorage, LocalFileStorage>();
+        services.AddSingleton<IPaymentGateway, CashOnDeliveryGateway>();
+        services.AddHttpClient<SslCommerzGateway>(c => c.Timeout = TimeSpan.FromSeconds(20));
+        services.AddTransient<IPaymentGateway>(sp => sp.GetRequiredService<SslCommerzGateway>());
 
         services.AddSingleton<ITokenService, TokenService>();
         services.AddScoped<IAuthService, AuthService>();

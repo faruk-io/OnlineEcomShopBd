@@ -28,6 +28,10 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<Coupon> Coupons => Set<Coupon>();
     public DbSet<Order> Orders => Set<Order>();
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
+    public DbSet<OrderStatusHistory> OrderStatusHistories => Set<OrderStatusHistory>();
+    public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<PcBuild> PcBuilds => Set<PcBuild>();
+    public DbSet<PcBuildItem> PcBuildItems => Set<PcBuildItem>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
@@ -120,6 +124,10 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
                     break;
             }
         }
+
+        // Optimistic concurrency: bump the counter of every row being updated (EF compares the previous value in WHERE).
+        foreach (var entry in ChangeTracker.Entries<IVersioned>().Where(e => e.State == EntityState.Modified))
+            entry.Entity.Version++;
 
         foreach (var entry in ChangeTracker.Entries<Product>()
                      .Where(e => e.State is EntityState.Added or EntityState.Modified))

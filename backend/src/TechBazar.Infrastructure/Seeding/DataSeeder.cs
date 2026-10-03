@@ -1,9 +1,8 @@
-using System.Globalization;
-using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using TechBazar.Application.Catalog;
 using TechBazar.Domain.Common;
 using TechBazar.Domain.Entities;
 using TechBazar.Domain.Enums;
@@ -12,8 +11,13 @@ using TechBazar.Infrastructure.Persistence;
 
 namespace TechBazar.Infrastructure.Seeding;
 
-/// <summary>Idempotent: each block only runs when its table is empty, so re-running never duplicates or overwrites data.</summary>
-public sealed partial class DataSeeder(
+/// <summary>
+/// Additive and idempotent: every category, brand, product (by slug) and coupon (by code) is added only if it does not exist,
+/// so re-running never duplicates anything, never overwrites edits made in the admin panel, and never resurrects a row that an
+/// administrator deleted (soft-deleted rows count as existing). New seed data in a later release is therefore picked up
+/// automatically by an existing database.
+/// </summary>
+public sealed class DataSeeder(
     ApplicationDbContext db,
     RoleManager<ApplicationRole> roles,
     UserManager<ApplicationUser> users,
@@ -22,26 +26,11 @@ public sealed partial class DataSeeder(
 {
     private readonly SeedOptions _opt = options.Value;
 
-    /// <summary>Spec keys exposed as catalog filters/facets.</summary>
-    internal static readonly HashSet<string> FilterableKeys = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "Series", "Generation", "Socket", "Chipset", "Form Factor", "RAM Type", "Capacity", "Interface", "GPU Chipset",
-        "Video Memory", "Wattage", "Efficiency", "Modular", "Screen Size", "Resolution", "Panel Type", "Refresh Rate",
-        "Cores", "Storage Type", "Storage Capacity", "Supported Motherboards",
-    };
-
-    /// <summary>Spec keys whose leading number is stored in NumericValue (normalised: TB -> GB, units dropped).</summary>
-    internal static readonly HashSet<string> NumericKeys = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "TDP", "Wattage", "Recommended PSU", "Cores", "Threads", "Capacity", "Storage Capacity", "Video Memory",
-        "Screen Size", "Refresh Rate", "Speed", "Output Power", "Max GPU Length", "Length", "Max Memory",
-    };
-
     public async Task SeedAsync(CancellationToken ct = default)
     {
         await SeedRolesAndAdminAsync();
-        if (!await db.Categories.AnyAsync(ct)) await SeedCatalogAsync(ct);
-        if (!await db.Coupons.AnyAsync(ct)) await SeedCouponsAsync(ct);
+        await SeedCatalogAsync(ct);
+        await SeedCouponsAsync(ct);
     }
 
     private async Task SeedRolesAndAdminAsync()
@@ -76,70 +65,80 @@ public sealed partial class DataSeeder(
     {
         var now = DateTime.UtcNow;
 
-        // Categories (parents are listed before children).
-        var cats = new Dictionary<string, Category>(StringComparer.OrdinalIgnoreCase);
-        var order = 0;
+        var cats = await db.Categories.IgnoreQueryFilters().ToDictionaryAsync(c => c.Slug, c => c, StringComparer.OrdinalIgnoreCase, ct);
+        var byName = cats.Values.GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        var order = cats.Count;
+        var newCats = 0;
         foreach (var c in CatalogSeedData.Categories)
         {
+            var slug = SlugHelper.Slugify(c.Name);
+            if (cats.ContainsKey(slug)) continue;
             var cat = new Category
             {
-                Name = c.Name, Slug = SlugHelper.Slugify(c.Name), Description = c.Description, DisplayOrder = order++,
-                Parent = c.Parent is null ? null : cats[c.Parent],
-                ImageUrl = $"/images/categories/{SlugHelper.Slugify(c.Name)}.svg",
+                Name = c.Name, Slug = slug, Description = c.Description, DisplayOrder = order++,
+                Parent = c.Parent is null ? null : byName[c.Parent],
+                ImageUrl = $"/images/categories/{slug}.svg",
             };
-            cats[c.Name] = cat;
+            cats[slug] = byName[c.Name] = cat;
             db.Categories.Add(cat);
+            newCats++;
         }
 
-        var brands = CatalogSeedData.Brands.ToDictionary(b => b.Name, b => new Brand
+        var brands = await db.Brands.IgnoreQueryFilters().ToDictionaryAsync(b => b.Name, b => b, StringComparer.OrdinalIgnoreCase, ct);
+        var newBrands = 0;
+        foreach (var b in CatalogSeedData.Brands)
         {
-            Name = b.Name, Slug = SlugHelper.Slugify(b.Name), Description = b.Description,
-            LogoUrl = $"/images/brands/{SlugHelper.Slugify(b.Name)}.svg",
-        });
-        db.Brands.AddRange(brands.Values);
+            if (brands.ContainsKey(b.Name)) continue;
+            var slug = SlugHelper.Slugify(b.Name);
+            var brand = new Brand { Name = b.Name, Slug = slug, Description = b.Description, LogoUrl = $"/images/brands/{slug}.svg" };
+            brands[b.Name] = brand;
+            db.Brands.Add(brand);
+            newBrands++;
+        }
 
-        // Deterministic pseudo-random popularity/age so listings sort the same on every machine.
-        var rnd = new Random(42);
+        var slugs = (await db.Products.IgnoreQueryFilters().Select(p => p.Slug).ToListAsync(ct)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var existingSkus = await db.Products.IgnoreQueryFilters().Select(p => p.Sku).ToListAsync(ct);
         var skuCounters = new Dictionary<string, int>();
+        foreach (var sku in existingSkus)
+        {
+            var parts = sku.Split('-'); // TB-CPU-0005
+            if (parts.Length == 3 && parts[0] == "TB" && int.TryParse(parts[2], out var n))
+                skuCounters[parts[1]] = Math.Max(skuCounters.GetValueOrDefault(parts[1]), n);
+        }
+
+        // Deterministic pseudo-random popularity/age so a fresh database always looks the same.
+        var rnd = new Random(42);
+        var newProducts = 0;
         foreach (var p in CatalogSeedData.Products)
         {
-            var category = cats[p.Category];
+            var slug = SlugHelper.Slugify(p.Name);
+            var category = cats[SlugHelper.Slugify(p.Category)];
             var brand = brands[p.Brand];
+            var sold = rnd.Next(5, 400);
+            var views = sold * rnd.Next(8, 30);
+            var stock = rnd.Next(3, 60);
+            var ageDays = rnd.Next(1, 240);
+            if (!slugs.Add(slug)) continue;
+
             var code = SkuPrefix(category.Slug);
             skuCounters[code] = skuCounters.GetValueOrDefault(code) + 1;
-
-            var sold = rnd.Next(5, 400);
+            var features = p.Features.Split('|');
             var product = new Product
             {
-                Name = p.Name,
-                Slug = SlugHelper.Slugify(p.Name),
-                Sku = $"TB-{code}-{skuCounters[code]:0000}",
-                ShortDescription = p.Features.Split('|')[0],
-                Description = $"{p.Name} by {brand.Name}. {string.Join(". ", p.Features.Split('|'))}. " +
-                              $"Sold with {WarrantyText(p.WarrantyMonths)} from TechBazar BD.",
-                Price = p.Price,
-                DiscountPrice = p.Sale,
-                StockStatus = p.Stock,
-                StockQuantity = p.Stock == StockStatus.InStock ? rnd.Next(3, 60) : 0,
-                WarrantyMonths = p.WarrantyMonths,
-                WarrantyDetails = WarrantyText(p.WarrantyMonths),
-                SoldCount = sold,
-                ViewCount = sold * rnd.Next(8, 30),
-                IsFeatured = p.Featured,
-                Category = category,
-                Brand = brand,
-                CreatedAt = now.AddDays(-rnd.Next(1, 240)),
+                Name = p.Name, Slug = slug, Sku = $"TB-{code}-{skuCounters[code]:0000}",
+                ShortDescription = features[0],
+                Description = $"{p.Name} by {brand.Name}. {string.Join(". ", features)}. Sold with {WarrantyText(p.WarrantyMonths)} from TechBazar BD.",
+                Price = p.Price, DiscountPrice = p.Sale, StockStatus = p.Stock,
+                StockQuantity = p.Stock == StockStatus.InStock ? stock : 0,
+                WarrantyMonths = p.WarrantyMonths, WarrantyDetails = WarrantyText(p.WarrantyMonths),
+                SoldCount = sold, ViewCount = views, IsFeatured = p.Featured,
+                Category = category, Brand = brand, CreatedAt = now.AddDays(-ageDays),
             };
             product.RecalculateEffectivePrice();
-
-            product.Images.Add(new ProductImage
-            {
-                Url = $"/images/placeholders/{category.Slug}.svg", AltText = p.Name, IsPrimary = true,
-            });
+            product.Images.Add(new ProductImage { Url = $"/images/placeholders/{category.Slug}.svg", AltText = p.Name, IsPrimary = true });
 
             var featureOrder = 0;
-            foreach (var f in p.Features.Split('|'))
-                product.KeyFeatures.Add(new ProductKeyFeature { Text = f, DisplayOrder = featureOrder++ });
+            foreach (var f in features) product.KeyFeatures.Add(new ProductKeyFeature { Text = f, DisplayOrder = featureOrder++ });
 
             var specOrder = 0;
             foreach (var line in p.Specs.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
@@ -154,38 +153,45 @@ public sealed partial class DataSeeder(
                     product.Specifications.Add(new ProductSpecification
                     {
                         Group = group, Key = key, Value = value,
-                        NumericValue = NumericKeys.Contains(key) ? ParseNumeric(value) : null,
-                        IsFilterable = FilterableKeys.Contains(key),
-                        DisplayOrder = specOrder++,
+                        NumericValue = SpecRules.NumericFor(key, value), IsFilterable = SpecRules.IsFilterable(key), DisplayOrder = specOrder++,
                     });
                 }
             }
             db.Products.Add(product);
+            newProducts++;
         }
 
-        await db.SaveChangesAsync(ct);
-        logger.LogInformation("Seeded {Categories} categories, {Brands} brands, {Products} products",
-            cats.Count, brands.Count, CatalogSeedData.Products.Length);
+        if (newCats + newBrands + newProducts > 0)
+        {
+            await db.SaveChangesAsync(ct);
+            logger.LogInformation("Seeded {Categories} categories, {Brands} brands, {Products} products", newCats, newBrands, newProducts);
+        }
     }
 
     private async Task SeedCouponsAsync(CancellationToken ct)
     {
         var now = DateTime.UtcNow;
-        foreach (var c in CatalogSeedData.Coupons)
+        var existing = (await db.Coupons.IgnoreQueryFilters().Select(c => c.Code).ToListAsync(ct)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var added = false;
+        foreach (var c in CatalogSeedData.Coupons.Where(c => !existing.Contains(c.Code)))
+        {
             db.Coupons.Add(new Coupon
             {
                 Code = c.Code, Description = c.Description, DiscountType = c.Type, Value = c.Value,
                 MinOrderAmount = c.Min, MaxDiscountAmount = c.Max, UsageLimit = c.Limit,
                 StartsAt = now, ExpiresAt = now.AddDays(c.ExpiresInDays),
             });
-        await db.SaveChangesAsync(ct);
+            added = true;
+        }
+        if (added) await db.SaveChangesAsync(ct);
     }
 
     private static string SkuPrefix(string categorySlug) => categorySlug switch
     {
         "processor" => "CPU", "motherboard" => "MB", "ram" => "RAM", "ssd" => "SSD", "graphics-card" => "GPU",
-        "power-supply" => "PSU", "casing" => "CSE", "monitor" => "MON", "ups" => "UPS", "gaming-laptop" or "everyday-laptop" => "LAP",
-        "gaming-pc" or "office-pc" => "PC", "keyboard" => "KBD", "mouse" => "MSE", "headphone" => "HDP", "webcam" => "CAM",
+        "power-supply" => "PSU", "casing" => "CSE", "cpu-cooler" => "CLR", "monitor" => "MON", "ups" => "UPS",
+        "gaming-laptop" or "everyday-laptop" => "LAP", "gaming-pc" or "office-pc" => "PC",
+        "keyboard" => "KBD", "mouse" => "MSE", "headphone" => "HDP", "webcam" => "CAM",
         _ => "GEN",
     };
 
@@ -193,15 +199,4 @@ public sealed partial class DataSeeder(
         months >= 120 ? "lifetime (limited) warranty"
         : months % 12 == 0 ? $"{months / 12}-year warranty"
         : $"{months}-month warranty";
-
-    /// <summary>"65 W" -> 65, "1 TB" -> 1000 (GB), "3200 MHz" -> 3200, "DDR5" -> null.</summary>
-    internal static decimal? ParseNumeric(string value)
-    {
-        var m = LeadingNumber().Match(value);
-        if (!m.Success || !decimal.TryParse(m.Groups[1].Value, NumberStyles.Number, CultureInfo.InvariantCulture, out var n)) return null;
-        return m.Groups[2].Value.Equals("TB", StringComparison.OrdinalIgnoreCase) ? n * 1000 : n;
-    }
-
-    [GeneratedRegex(@"^\s*(\d+(?:\.\d+)?)\s*([A-Za-z]+)?")]
-    private static partial Regex LeadingNumber();
 }

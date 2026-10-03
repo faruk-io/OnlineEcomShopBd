@@ -21,3 +21,13 @@ public abstract class BaseEntity : IAuditable, ISoftDeletable
     public bool IsDeleted { get; set; }
     public DateTime? DeletedAt { get; set; }
 }
+
+/// <summary>
+/// Optimistic-concurrency counter. The DbContext increments it on every update and EF adds it to the WHERE clause,
+/// so two concurrent writers (last item in stock, last coupon use, double payment callback) cannot both win.
+/// Provider-agnostic (an int, not a SQL Server rowversion).
+/// </summary>
+public interface IVersioned
+{
+    int Version { get; set; }
+}

@@ -21,6 +21,12 @@ public interface IApplicationDbContext
     DbSet<Coupon> Coupons { get; }
     DbSet<Order> Orders { get; }
     DbSet<OrderItem> OrderItems { get; }
+    DbSet<OrderStatusHistory> OrderStatusHistories { get; }
+    DbSet<Payment> Payments { get; }
+    DbSet<PcBuild> PcBuilds { get; }
+    DbSet<PcBuildItem> PcBuildItems { get; }
+
+    Microsoft.EntityFrameworkCore.ChangeTracking.ChangeTracker ChangeTracker { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

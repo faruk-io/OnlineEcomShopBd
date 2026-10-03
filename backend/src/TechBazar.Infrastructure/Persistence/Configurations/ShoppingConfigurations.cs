@@ -68,6 +68,7 @@ public class CouponConfiguration : IEntityTypeConfiguration<Coupon>
         b.Property(x => x.Code).HasMaxLength(50).IsRequired();
         b.Property(x => x.Description).HasMaxLength(300);
         b.Property(x => x.DiscountType).HasConversion<int>();
+        b.Property(x => x.Version).IsConcurrencyToken();
         b.HasUniqueActiveIndex(x => x.Code);
         b.ToTable(t => t.HasCheckConstraint("CK_Coupons_Value", "[Value] > 0"));
     }
@@ -81,6 +82,8 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         b.Property(x => x.Status).HasConversion<int>();
         b.Property(x => x.PaymentMethod).HasConversion<int>();
         b.Property(x => x.PaymentStatus).HasConversion<int>();
+        b.Property(x => x.ShippingMethod).HasConversion<int>();
+        b.Property(x => x.ContactEmail).HasMaxLength(256).IsRequired();
         b.Property(x => x.CouponCode).HasMaxLength(50);
         b.Property(x => x.Note).HasMaxLength(500);
         b.Property(x => x.ShipFullName).HasMaxLength(100).IsRequired();
@@ -93,6 +96,7 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         b.HasUniqueActiveIndex(x => x.OrderNumber);
         b.HasIndex(x => new { x.UserId, x.CreatedAt });
         b.HasIndex(x => x.Status);
+        b.HasIndex(x => x.CreatedAt);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Restrict);
     }
 }
@@ -122,5 +126,56 @@ public class RefreshTokenConfiguration : IEntityTypeConfiguration<RefreshToken>
         b.HasIndex(x => x.TokenHash).IsUnique();
         b.HasIndex(x => x.UserId);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public class OrderStatusHistoryConfiguration : IEntityTypeConfiguration<OrderStatusHistory>
+{
+    public void Configure(EntityTypeBuilder<OrderStatusHistory> b)
+    {
+        b.Property(x => x.Status).HasConversion<int>();
+        b.Property(x => x.Note).HasMaxLength(500);
+        b.HasIndex(x => x.OrderId);
+        b.HasOne(x => x.Order).WithMany(x => x.History).HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public class PaymentConfiguration : IEntityTypeConfiguration<Payment>
+{
+    public void Configure(EntityTypeBuilder<Payment> b)
+    {
+        b.Property(x => x.Gateway).HasMaxLength(30).IsRequired();
+        b.Property(x => x.Method).HasConversion<int>();
+        b.Property(x => x.Status).HasConversion<int>();
+        b.Property(x => x.Currency).HasMaxLength(3).IsRequired();
+        b.Property(x => x.TransactionId).HasMaxLength(40).IsRequired();
+        b.Property(x => x.GatewayReference).HasMaxLength(100);
+        b.Property(x => x.FailureReason).HasMaxLength(300);
+        b.Property(x => x.Version).IsConcurrencyToken();
+        b.HasUniqueActiveIndex(x => x.TransactionId);
+        b.HasIndex(x => x.OrderId);
+        b.HasOne(x => x.Order).WithMany(x => x.Payments).HasForeignKey(x => x.OrderId).OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public class PcBuildConfiguration : IEntityTypeConfiguration<PcBuild>
+{
+    public void Configure(EntityTypeBuilder<PcBuild> b)
+    {
+        b.Property(x => x.ShareCode).HasMaxLength(12).IsRequired();
+        b.Property(x => x.Name).HasMaxLength(100);
+        b.HasUniqueActiveIndex(x => x.ShareCode);
+        b.HasIndex(x => x.UserId);
+    }
+}
+
+public class PcBuildItemConfiguration : IEntityTypeConfiguration<PcBuildItem>
+{
+    public void Configure(EntityTypeBuilder<PcBuildItem> b)
+    {
+        b.Property(x => x.Slot).HasConversion<int>();
+        b.HasIndex(x => x.PcBuildId);
+        b.HasOne(x => x.PcBuild).WithMany(x => x.Items).HasForeignKey(x => x.PcBuildId).OnDelete(DeleteBehavior.Cascade);
+        b.HasOne(x => x.Product).WithMany().HasForeignKey(x => x.ProductId).OnDelete(DeleteBehavior.Restrict);
     }
 }

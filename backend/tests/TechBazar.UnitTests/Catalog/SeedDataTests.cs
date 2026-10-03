@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using TechBazar.Application.Catalog;
 using TechBazar.Domain.Entities;
 using TechBazar.Domain.Enums;
 using TechBazar.Infrastructure.Persistence;
@@ -109,11 +110,11 @@ public class SeedDataTests(TestDatabase fixture) : IClassFixture<TestDatabase>
     [InlineData("3200 MHz", 3200)]
     [InlineData("4.4 GHz", 4.4)]
     public void ParseNumeric_ExtractsLeadingNumber(string value, double expected) =>
-        Assert.Equal((decimal)expected, DataSeeder.ParseNumeric(value));
+        Assert.Equal((decimal)expected, SpecRules.ParseNumeric(value));
 
     [Theory]
     [InlineData("DDR5")]
     [InlineData("LGA1700")]
     [InlineData("")]
-    public void ParseNumeric_ReturnsNullForNonNumeric(string value) => Assert.Null(DataSeeder.ParseNumeric(value));
+    public void ParseNumeric_ReturnsNullForNonNumeric(string value) => Assert.Null(SpecRules.ParseNumeric(value));
 }

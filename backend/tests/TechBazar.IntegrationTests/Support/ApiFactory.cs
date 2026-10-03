@@ -7,6 +7,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using TechBazar.Application.Email;
+using TechBazar.Application.Payments;
+using TechBazar.Infrastructure.Payments;
 using TechBazar.Infrastructure.Persistence;
 using TechBazar.Infrastructure.Seeding;
 
@@ -32,6 +35,10 @@ public class ApiFactory : WebApplicationFactory<Program>
     public const string TestJwtKey = "integration-tests-signing-key-0123456789-abcdef";
 
     private readonly SqliteConnection _connection = new("DataSource=:memory:");
+    private readonly string _uploads = Path.Combine(Path.GetTempPath(), "tb-it-uploads-" + Guid.NewGuid().ToString("N"));
+
+    public CapturingEmailSender Emails { get; } = new();
+    public string UploadsPath => _uploads;
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
@@ -41,6 +48,10 @@ public class ApiFactory : WebApplicationFactory<Program>
             ["Jwt:Key"] = TestJwtKey,
             ["RateLimiting:Auth:PermitLimit"] = _authPermitLimit.ToString(),
             ["RateLimiting:Auth:WindowSeconds"] = "60",
+            ["RateLimiting:Public:PermitLimit"] = "10000",
+            ["Storage:RootPath"] = _uploads,
+            ["Payments:PublicApiBaseUrl"] = "https://api.test",
+            ["Payments:StorefrontBaseUrl"] = "https://shop.test",
             ["Seed:Enabled"] = "false",
             ["Seed:ApplyMigrations"] = "false",
             ["Seed:AdminEmail"] = AdminEmail,
@@ -52,6 +63,11 @@ public class ApiFactory : WebApplicationFactory<Program>
         {
             services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
             services.RemoveAll<IDbContextOptionsConfiguration<ApplicationDbContext>>();
+            services.RemoveAll<IEmailSender>();
+            services.AddSingleton<IEmailSender>(Emails);
+            services.RemoveAll<IPaymentGateway>();
+            services.AddSingleton<IPaymentGateway, CashOnDeliveryGateway>();
+            services.AddSingleton<IPaymentGateway, FakeOnlineGateway>();
             _connection.Open();
             services.AddDbContext<ApplicationDbContext>(o => o.UseSqlite(_connection));
         });
@@ -69,6 +85,8 @@ public class ApiFactory : WebApplicationFactory<Program>
     protected override void Dispose(bool disposing)
     {
         base.Dispose(disposing);
-        if (disposing) _connection.Dispose();
+        if (!disposing) return;
+        _connection.Dispose();
+        try { if (Directory.Exists(_uploads)) Directory.Delete(_uploads, true); } catch { /* best effort */ }
     }
 }

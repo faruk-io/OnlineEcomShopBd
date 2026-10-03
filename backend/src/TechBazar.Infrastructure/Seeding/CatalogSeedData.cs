@@ -32,6 +32,7 @@ internal static class CatalogSeedData
         new("Graphics Card", "Component", "NVIDIA GeForce and AMD Radeon graphics cards"),
         new("Power Supply", "Component", "80 PLUS certified PSUs"),
         new("Casing", "Component", "PC cases and chassis"),
+        new("CPU Cooler", "Component", "Air coolers and all-in-one liquid coolers"),
         new("Monitor", null, "Office and gaming monitors"),
         new("UPS", null, "Uninterruptible power supplies"),
         new("Accessories", null, "Peripherals and add-ons"),
@@ -64,6 +65,8 @@ internal static class CatalogSeedData
         new("Logitech", "Mice, keyboards, webcams and headsets"),
         new("Redragon", "Gaming peripherals"),
         new("TechBazar", "TechBazar BD in-house custom-built PCs"),
+        new("Deepcool", "CPU air and liquid coolers, cases"),
+        new("ID-Cooling", "CPU coolers"),
     ];
 
     public static readonly ProductSeed[] Products =
@@ -565,6 +568,38 @@ internal static class CatalogSeedData
             """
             General|Resolution=1280 x 720 (HD);Frame Rate=30 fps;Field of View=60 degrees
             Features|Microphone=Mono;Connectivity=Wired USB
+            """),
+
+        // ---------------- CPU coolers (appended last so earlier products keep their seeded SKUs / popularity) ----------------
+        new("CPU Cooler", "Cooler Master", "Cooler Master Hyper 212 Black Edition CPU Air Cooler", 3900, null, 24,
+            "Single tower, 4 heat pipes|120 mm PWM fan|Fits Intel LGA1700 and AMD AM4/AM5|Proven budget cooler",
+            """
+            General|Cooler Type=Air Cooler;Supported Sockets=LGA1700, LGA1200, AM4, AM5;Fan Size=120 mm
+            Thermal|TDP Rating=150 W;Height=158 mm
+            """),
+        new("CPU Cooler", "Deepcool", "Deepcool AK400 CPU Air Cooler", 3500, 3300, 24,
+            "4 copper heat pipes|120 mm FDB fan|Strong cooling for 65–125 W CPUs|LGA1700 and AM5 mounting included",
+            """
+            General|Cooler Type=Air Cooler;Supported Sockets=LGA1700, LGA1200, AM4, AM5;Fan Size=120 mm
+            Thermal|TDP Rating=220 W;Height=155 mm
+            """, Featured: true),
+        new("CPU Cooler", "Deepcool", "Deepcool AK620 Dual-Tower CPU Air Cooler", 6800, null, 24,
+            "Dual tower, 6 heat pipes|Two 120 mm fans|Handles high-end CPUs quietly|LGA1700 and AM5 ready",
+            """
+            General|Cooler Type=Air Cooler;Supported Sockets=LGA1700, LGA1200, AM4, AM5;Fan Size=2 x 120 mm
+            Thermal|TDP Rating=260 W;Height=160 mm
+            """),
+        new("CPU Cooler", "ID-Cooling", "ID-Cooling SE-214-XT CPU Air Cooler", 2800, null, 12,
+            "4 heat pipes|120 mm PWM fan|Compact and quiet|Low-cost option for mid-range CPUs",
+            """
+            General|Cooler Type=Air Cooler;Supported Sockets=LGA1700, LGA1200, AM4, AM5;Fan Size=120 mm
+            Thermal|TDP Rating=180 W;Height=154 mm
+            """),
+        new("CPU Cooler", "Cooler Master", "Cooler Master MasterLiquid 240L Core ARGB AIO Liquid Cooler", 9800, 9400, 24,
+            "240 mm radiator|Two ARGB fans|Low-noise pump|LGA1700, AM4 and AM5 brackets",
+            """
+            General|Cooler Type=Liquid Cooler (240 mm AIO);Supported Sockets=LGA1700, LGA1200, AM4, AM5;Fan Size=2 x 120 mm
+            Thermal|TDP Rating=250 W;Height=52 mm
             """),
     ];
 

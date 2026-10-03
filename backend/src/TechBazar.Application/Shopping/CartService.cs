@@ -21,10 +21,10 @@ public sealed class CartService(IApplicationDbContext db) : ICartService
             throw new ConflictException($"'{product.Name}' is currently not available for purchase.");
 
         var cart = await GetOrCreateCartAsync(userId, ct);
-        var line = cart.Items.FirstOrDefault(i => i.ProductId == productId);
+        var line = cart.Items.FirstOrDefault(i => !i.IsDeleted && i.ProductId == productId);
         if (line is null)
         {
-            if (cart.Items.Count >= CartLimits.MaxLines) throw new ConflictException("Your cart is full.");
+            if (cart.Items.Count(i => !i.IsDeleted) >= CartLimits.MaxLines) throw new ConflictException("Your cart is full.");
             cart.Items.Add(new CartItem { ProductId = productId, Quantity = quantity, UnitPrice = product.EffectivePrice });
         }
         else
@@ -70,10 +70,10 @@ public sealed class CartService(IApplicationDbContext db) : ICartService
         foreach (var (productId, qty) in wanted)
         {
             if (!products.TryGetValue(productId, out var price)) continue; // silently skip unavailable products
-            var line = cart.Items.FirstOrDefault(i => i.ProductId == productId);
+            var line = cart.Items.FirstOrDefault(i => !i.IsDeleted && i.ProductId == productId);
             if (line is null)
             {
-                if (cart.Items.Count >= CartLimits.MaxLines) break;
+                if (cart.Items.Count(i => !i.IsDeleted) >= CartLimits.MaxLines) break;
                 cart.Items.Add(new CartItem { ProductId = productId, Quantity = Math.Min(qty, CartLimits.MaxQuantityPerLine), UnitPrice = price });
             }
             else

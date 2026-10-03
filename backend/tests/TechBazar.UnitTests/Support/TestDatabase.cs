@@ -3,6 +3,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using TechBazar.Application;
+using TechBazar.Application.Email;
+using TechBazar.Application.Orders;
+using TechBazar.Application.Payments;
 using TechBazar.Infrastructure.Identity;
 using TechBazar.Infrastructure.Persistence;
 using TechBazar.Infrastructure.Seeding;
@@ -32,12 +35,22 @@ public sealed class TestDatabase : IDisposable
         services.Configure<SeedOptions>(o => { o.Enabled = true; });
         services.AddScoped<DataSeeder>();
         services.AddApplication();
+        services.AddOptions<ShippingOptions>();
+        services.Configure<PaymentOptions>(o => { o.PublicApiBaseUrl = "https://api.test"; o.StorefrontBaseUrl = "https://shop.test"; });
+        services.AddSingleton<CapturingEmailSender>();
+        services.AddSingleton<IEmailSender>(sp => sp.GetRequiredService<CapturingEmailSender>());
+        services.AddSingleton<FakeOnlineGateway>();
+        services.AddSingleton<IPaymentGateway>(sp => sp.GetRequiredService<FakeOnlineGateway>());
+        services.AddSingleton<IPaymentGateway, TechBazar.Infrastructure.Payments.CashOnDeliveryGateway>();
         Services = services.BuildServiceProvider();
 
         using var scope = Services.CreateScope();
         scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Database.EnsureCreated();
         if (seed) scope.ServiceProvider.GetRequiredService<DataSeeder>().SeedAsync().GetAwaiter().GetResult();
     }
+
+    public CapturingEmailSender Emails => Services.GetRequiredService<CapturingEmailSender>();
+    public FakeOnlineGateway Gateway => Services.GetRequiredService<FakeOnlineGateway>();
 
     public IServiceScope CreateScope() => Services.CreateScope();
 

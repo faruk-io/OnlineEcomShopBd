@@ -27,8 +27,9 @@ public class Brand : BaseEntity
     public ICollection<Product> Products { get; set; } = new List<Product>();
 }
 
-public class Product : BaseEntity
+public class Product : BaseEntity, IVersioned
 {
+    public int Version { get; set; }
     public string Name { get; set; } = default!;
     public string Slug { get; set; } = default!;
     public string Sku { get; set; } = default!;

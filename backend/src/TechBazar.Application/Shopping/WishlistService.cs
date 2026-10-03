@@ -17,9 +17,9 @@ public sealed class WishlistService(IApplicationDbContext db) : IWishlistService
     {
         if (!await db.Products.AnyAsync(p => p.Id == productId && p.IsActive, ct)) throw new NotFoundException("Product not found.");
         var wishlist = await GetOrCreateAsync(userId, ct);
-        if (wishlist.Items.All(i => i.ProductId != productId))
+        if (wishlist.Items.All(i => i.IsDeleted || i.ProductId != productId))
         {
-            if (wishlist.Items.Count >= MaxItems) throw new ConflictException("Your wishlist is full.");
+            if (wishlist.Items.Count(i => !i.IsDeleted) >= MaxItems) throw new ConflictException("Your wishlist is full.");
             wishlist.Items.Add(new WishlistItem { ProductId = productId });
             await db.SaveChangesAsync(ct);
         }
@@ -44,7 +44,7 @@ public sealed class WishlistService(IApplicationDbContext db) : IWishlistService
 
         var valid = await db.Products.AsNoTracking().Where(p => p.IsActive && ids.Contains(p.Id)).Select(p => p.Id).ToListAsync(ct);
         var wishlist = await GetOrCreateAsync(userId, ct);
-        var existing = wishlist.Items.Select(i => i.ProductId).ToHashSet();
+        var existing = wishlist.Items.Where(i => !i.IsDeleted).Select(i => i.ProductId).ToHashSet();
         foreach (var id in valid.Where(id => !existing.Contains(id)).Take(MaxItems - existing.Count))
             wishlist.Items.Add(new WishlistItem { ProductId = id });
         await db.SaveChangesAsync(ct);
