@@ -1,10 +1,15 @@
+using System.IO.Compression;
+using System.Net;
 using System.Text;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Cors.Infrastructure;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
@@ -38,13 +43,17 @@ public static class ServiceCollectionExtensions
                 {
                     ValidateIssuer = true, ValidIssuer = j.Issuer,
                     ValidateAudience = true, ValidAudience = j.Audience,
-                    ValidateIssuerSigningKey = true,
+                    ValidateIssuerSigningKey = true, RequireSignedTokens = true, RequireExpirationTime = true,
+                    ValidAlgorithms = [SecurityAlgorithms.HmacSha256],   // no algorithm confusion ("none", RS256 with the key as a public key, ...)
                     IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(j.Key)),
                     ValidateLifetime = true, ClockSkew = TimeSpan.FromSeconds(30),
                     NameClaimType = "name", RoleClaimType = "role",
                 };
             });
-        services.AddAuthorizationBuilder().AddPolicy(Policies.AdminOnly, p => p.RequireRole(Roles.Admin));
+        services.AddAuthorizationBuilder()
+            .AddPolicy(Policies.AdminOnly, p => p.RequireRole(Roles.Admin))
+            // Deny by default: an endpoint that forgets [Authorize] is NOT public. Anonymous endpoints must say [AllowAnonymous].
+            .SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
         return services;
     }
 
@@ -68,6 +77,16 @@ public static class ServiceCollectionExtensions
             var window = TimeSpan.FromSeconds(cfg.GetValue("RateLimiting:Auth:WindowSeconds", 60));
 
             o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            // Blanket per-client ceiling for the whole API (anonymous: per IP, signed-in: per user) on top of the stricter
+            // auth / public policies. Protects the expensive anonymous endpoints (search, facets, builder evaluate).
+            var globalPermit = cfg.GetValue("RateLimiting:Global:PermitLimit", 600);
+            o.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(ctx =>
+            {
+                if (!ctx.Request.Path.StartsWithSegments("/api")) return RateLimitPartition.GetNoLimiter("static");
+                var key = ctx.User.FindFirst("sub")?.Value is { } sub ? "u:" + sub : "ip:" + (ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown");
+                return RateLimitPartition.GetFixedWindowLimiter(key,
+                    _ => new FixedWindowRateLimiterOptions { PermitLimit = globalPermit, Window = TimeSpan.FromSeconds(60), QueueLimit = 0, AutoReplenishment = true });
+            });
             o.AddPolicy(Policies.AuthRateLimit, ctx => RateLimitPartition.GetFixedWindowLimiter(
                 ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
                 _ => new FixedWindowRateLimiterOptions { PermitLimit = permit, Window = window, QueueLimit = 0, AutoReplenishment = true }));
@@ -92,6 +111,45 @@ public static class ServiceCollectionExtensions
                 });
             };
         });
+        return services;
+    }
+
+    /// <summary>
+    /// Trusts X-Forwarded-For / -Proto ONLY from configured proxies (<c>ForwardedHeaders:KnownProxies</c> / <c>KnownNetworks</c> in CIDR form).
+    /// Without this the API sees the SSR server's address for every visitor, so per-IP rate limits and audit IPs collapse into one bucket;
+    /// trusting the headers from anyone would instead let clients spoof their IP and dodge the limits.
+    /// </summary>
+    public static IServiceCollection AddForwardedHeadersFromConfig(this IServiceCollection services, IConfiguration cfg)
+    {
+        services.Configure<ForwardedHeadersOptions>(o =>
+        {
+            o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+            o.ForwardLimit = null;               // walk the chain from the right until the first untrusted hop
+            o.KnownNetworks.Clear();
+            o.KnownProxies.Clear();
+            foreach (var ip in cfg.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>() ?? [])
+                if (IPAddress.TryParse(ip, out var addr)) o.KnownProxies.Add(addr);
+            foreach (var net in cfg.GetSection("ForwardedHeaders:KnownNetworks").Get<string[]>() ?? [])
+            {
+                var parts = net.Split('/');
+                if (parts.Length == 2 && IPAddress.TryParse(parts[0], out var prefix) && int.TryParse(parts[1], out var bits))
+                    o.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(prefix, bits));
+            }
+        });
+        return services;
+    }
+
+    public static IServiceCollection AddApiCompression(this IServiceCollection services)
+    {
+        services.AddResponseCompression(o =>
+        {
+            o.EnableForHttps = true;   // auth responses (tokens) are excluded in the pipeline to stay clear of BREACH-style attacks
+            o.Providers.Add<BrotliCompressionProvider>();
+            o.Providers.Add<GzipCompressionProvider>();
+            o.MimeTypes = ["application/json", "application/problem+json", "image/svg+xml", "text/plain"];
+        });
+        services.Configure<BrotliCompressionProviderOptions>(o => o.Level = CompressionLevel.Fastest);
+        services.Configure<GzipCompressionProviderOptions>(o => o.Level = CompressionLevel.Fastest);
         return services;
     }
 

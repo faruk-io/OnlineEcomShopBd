@@ -1,11 +1,19 @@
-import { HttpClient, HttpContext } from '@angular/common/http';
+import { HttpClient, HttpContext, HttpHeaders } from '@angular/common/http';
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { Observable, finalize, map, shareReplay, tap, throwError } from 'rxjs';
 import { API_BASE, SILENT_ERRORS, SKIP_AUTH } from '../config';
 import { AuthResponse, UserDto } from '../models/api.models';
 import { StorageService } from './storage.service';
 
-const REFRESH_KEY = 'tb.refresh.v1';
+/**
+ * The rotating refresh token lives ONLY in an HttpOnly, SameSite=Strict cookie set by the API, so injected script can never read it.
+ * What we keep in localStorage is just this non-secret hint that a session may exist (so a reload knows to try a silent refresh).
+ */
+const SESSION_KEY = 'tb.session.v1';
+/** Pre-cookie versions stored the refresh token itself here; it is sent once to be exchanged for a cookie, then deleted. */
+const LEGACY_REFRESH_KEY = 'tb.refresh.v1';
+/** Tells the API to deliver / read the refresh token via the cookie (and, as a custom header, makes cross-site forgery impossible). */
+const COOKIE_MODE = new HttpHeaders({ 'X-Refresh-Mode': 'cookie' });
 
 export interface RegisterPayload {
   fullName: string;
@@ -15,8 +23,8 @@ export interface RegisterPayload {
 }
 
 /**
- * Session handling. The short-lived access token lives in memory only; the rotating refresh token is persisted
- * so a page reload can silently restore the session (the API takes it in the JSON body).
+ * Session handling. The short-lived access token lives in memory only; the rotating refresh token is an HttpOnly cookie that
+ * JavaScript cannot see, so a page reload silently restores the session without any token ever being readable by page scripts.
  */
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -36,8 +44,9 @@ export class AuthService {
     return this.token;
   }
 
-  hasRefreshToken(): boolean {
-    return !!this.storage.getString(REFRESH_KEY);
+  /** True when a session may be restorable (a hint only: the server decides). */
+  hasSession(): boolean {
+    return !!this.storage.getString(SESSION_KEY) || !!this.storage.getString(LEGACY_REFRESH_KEY);
   }
 
   /**
@@ -45,7 +54,7 @@ export class AuthService {
    * hard reload on a protected page does not bounce a signed-in user to /login.
    */
   whenReady(): Promise<void> {
-    if (!this.storage.isBrowser || !this.hasRefreshToken() || this.token) return Promise.resolve();
+    if (!this.storage.isBrowser || !this.hasSession() || this.token) return Promise.resolve();
     this.restore ??= new Promise<void>((resolve) => {
       this.refresh().subscribe({ next: () => resolve(), error: () => resolve() });
     });
@@ -54,13 +63,13 @@ export class AuthService {
 
   login(email: string, password: string): Observable<UserDto> {
     return this.http
-      .post<AuthResponse>(`${API_BASE}/auth/login`, { email, password }, { context: this.formContext() })
+      .post<AuthResponse>(`${API_BASE}/auth/login`, { email, password }, { context: this.formContext(), headers: COOKIE_MODE })
       .pipe(tap((res) => this.setSession(res)), map((res) => res.user));
   }
 
   register(payload: RegisterPayload): Observable<UserDto> {
     return this.http
-      .post<AuthResponse>(`${API_BASE}/auth/register`, payload, { context: this.formContext() })
+      .post<AuthResponse>(`${API_BASE}/auth/register`, payload, { context: this.formContext(), headers: COOKIE_MODE })
       .pipe(tap((res) => this.setSession(res)), map((res) => res.user));
   }
 
@@ -71,24 +80,32 @@ export class AuthService {
   }
 
   logout(): void {
-    const refreshToken = this.storage.getString(REFRESH_KEY);
-    if (refreshToken && this.token) {
-      // Best effort: revoke server-side, never block the UI on it.
+    if (this.hasSession()) {
+      // Best effort, never block the UI on it. The API revokes by the cookie / token itself, so this works even when the access
+      // token has already expired (a logout that silently leaves a live refresh token behind is not a logout).
+      const legacy = this.storage.getString(LEGACY_REFRESH_KEY);
       this.http
-        .post(`${API_BASE}/auth/logout`, { refreshToken }, { context: new HttpContext().set(SILENT_ERRORS, true).set(SKIP_AUTH, false) })
+        .post(`${API_BASE}/auth/logout`, legacy ? { refreshToken: legacy } : {}, { context: this.formContext(), headers: COOKIE_MODE })
         .subscribe({ error: () => undefined });
     }
     this.clearSession();
   }
 
+  /** "Sign out of all devices": revokes every refresh token of the account. */
+  logoutAll(): Observable<void> {
+    return this.http
+      .post<void>(`${API_BASE}/auth/logout-all`, {}, { context: new HttpContext().set(SILENT_ERRORS, true), headers: COOKIE_MODE })
+      .pipe(tap(() => this.clearSession()));
+  }
+
   /** Single-flight refresh: concurrent 401s share one request (the refresh token is single-use). */
   refresh(): Observable<string> {
     if (this.inflightRefresh$) return this.inflightRefresh$;
-    const refreshToken = this.storage.getString(REFRESH_KEY);
-    if (!refreshToken) return throwError(() => new Error('No refresh token'));
+    if (!this.hasSession()) return throwError(() => new Error('No session'));
+    const legacy = this.storage.getString(LEGACY_REFRESH_KEY);   // one-time migration from the pre-cookie storage
 
     this.inflightRefresh$ = this.http
-      .post<AuthResponse>(`${API_BASE}/auth/refresh`, { refreshToken }, { context: this.formContext() })
+      .post<AuthResponse>(`${API_BASE}/auth/refresh`, legacy ? { refreshToken: legacy } : {}, { context: this.formContext(), headers: COOKIE_MODE })
       .pipe(
         tap({ next: (res) => this.setSession(res), error: () => this.clearSession() }),
         map((res) => res.accessToken),
@@ -101,12 +118,15 @@ export class AuthService {
   clearSession(): void {
     this.token = null;
     this._user.set(null);
-    this.storage.remove(REFRESH_KEY);
+    this.storage.remove(SESSION_KEY);
+    this.storage.remove(LEGACY_REFRESH_KEY);
   }
 
   private setSession(res: AuthResponse): void {
     this.token = res.accessToken;
-    this.storage.set(REFRESH_KEY, res.refreshToken);
+    this.storage.set(SESSION_KEY, '1');
+    this.storage.remove(LEGACY_REFRESH_KEY);   // now held by the cookie
+    // (res.refreshToken is null in cookie mode; it is never stored by script)
     this._user.set(res.user);
   }
 

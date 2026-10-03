@@ -188,10 +188,22 @@ public sealed class DataSeeder(
 
     private static string SkuPrefix(string categorySlug) => categorySlug switch
     {
-        "processor" => "CPU", "motherboard" => "MB", "ram" => "RAM", "ssd" => "SSD", "graphics-card" => "GPU",
-        "power-supply" => "PSU", "casing" => "CSE", "cpu-cooler" => "CLR", "monitor" => "MON", "ups" => "UPS",
-        "gaming-laptop" or "everyday-laptop" => "LAP", "gaming-pc" or "office-pc" => "PC",
-        "keyboard" => "KBD", "mouse" => "MSE", "headphone" => "HDP", "webcam" => "CAM",
+        "processor" => "CPU",
+        "motherboard" => "MB",
+        "ram" => "RAM",
+        "ssd" => "SSD",
+        "graphics-card" => "GPU",
+        "power-supply" => "PSU",
+        "casing" => "CSE",
+        "cpu-cooler" => "CLR",
+        "monitor" => "MON",
+        "ups" => "UPS",
+        "gaming-laptop" or "everyday-laptop" => "LAP",
+        "gaming-pc" or "office-pc" => "PC",
+        "keyboard" => "KBD",
+        "mouse" => "MSE",
+        "headphone" => "HDP",
+        "webcam" => "CAM",
         _ => "GEN",
     };
 

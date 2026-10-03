@@ -24,7 +24,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
         error instanceof HttpErrorResponse &&
         error.status === 401 &&
         !req.context.get(IS_RETRY) &&
-        auth.hasRefreshToken() &&
+        auth.hasSession() &&
         !!token; // only a rejected *authenticated* call warrants a refresh
 
       if (!canRefresh) return throwError(() => error);

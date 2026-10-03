@@ -1,0 +1,148 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "true"
+  NG_CLI_ANALYTICS: "false"
+
+jobs:
+  backend:
+    name: Backend (build, format, test, vulnerabilities)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+          cache: true
+          cache-dependency-path: backend/Directory.Packages.props
+      - run: dotnet restore TechBazar.sln
+      - run: dotnet build TechBazar.sln -c Release --no-restore -warnaserror
+      - name: Verify formatting
+        run: dotnet format TechBazar.sln --verify-no-changes --no-restore
+      - name: Test
+        run: >
+          dotnet test TechBazar.sln -c Release --no-build
+          --logger "trx;LogFileName=test-results.trx"
+          --results-directory ${{ github.workspace }}/test-results/backend
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-results
+          path: test-results/backend
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Vulnerable packages (fails if any, including transitive)
+        run: |
+          dotnet list TechBazar.sln package --vulnerable --include-transitive 2>&1 | tee vulnerable.txt
+          if grep -qi "has the following vulnerable packages" vulnerable.txt; then
+            echo "::error::Vulnerable NuGet packages found (see log)"; exit 1
+          fi
+
+  frontend:
+    name: Frontend (lint, test, build, audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run lint
+      - run: npm test -- --watch=false
+      - run: npm run build
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
+  e2e:
+    name: End-to-end (Playwright)
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+          cache: true
+          cache-dependency-path: backend/Directory.Packages.props
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: dotnet restore backend/TechBazar.sln
+      - run: dotnet build backend/TechBazar.sln -c Release --no-restore
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci --no-audit --no-fund
+      - name: Install Playwright browser
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Build storefront
+        working-directory: frontend
+        run: npx ng build
+      - name: Run e2e
+        working-directory: frontend
+        env:
+          CI: "1"
+        run: npm run e2e
+      - name: Upload Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+            frontend/e2e-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  docker:
+    name: Docker images (build only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build API image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: false
+          tags: techbazar-api:ci
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+      - name: Build web image
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          push: false
+          tags: techbazar-web:ci
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max

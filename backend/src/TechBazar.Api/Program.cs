@@ -1,9 +1,11 @@
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc.ApplicationModels;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Options;
 using Serilog;
+using TechBazar.Api.Controllers;
 using TechBazar.Api.Extensions;
 using TechBazar.Api.Filters;
 using TechBazar.Api.Middleware;
@@ -12,9 +14,15 @@ using TechBazar.Infrastructure;
 using TechBazar.Infrastructure.Persistence;
 using TechBazar.Infrastructure.Seeding;
 using TechBazar.Infrastructure.Storage;
-using TechBazar.Api.Controllers;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.WebHost.ConfigureKestrel(k =>
+{
+    k.AddServerHeader = false;                              // do not advertise the server software
+    k.Limits.MaxRequestBodySize = 2 * 1024 * 1024;          // JSON APIs never need more; the image upload endpoint raises it for itself
+    k.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(15);
+});
 
 builder.Host.UseSerilog((ctx, services, cfg) => cfg
     .ReadFrom.Configuration(ctx.Configuration)
@@ -41,25 +49,38 @@ builder.Services.PostConfigure<StorageOptions>(o => o.RootPath ??= Path.Combine(
 builder.Services.AddJwtAuth();
 builder.Services.AddCorsFromConfig();
 builder.Services.AddAppRateLimiting();
+builder.Services.AddForwardedHeadersFromConfig(builder.Configuration);
+builder.Services.AddApiCompression();
 builder.Services.AddCatalogOutputCache();
 builder.Services.AddSwagger();
 builder.Services.AddHealthChecks().AddDbContextCheck<ApplicationDbContext>("database");
 
 var app = builder.Build();
 
+// Must be first: everything after (rate limiting, https redirection, logging) should see the real client address/scheme.
+app.UseForwardedHeaders();
+app.UseMiddleware<SecurityHeadersMiddleware>();
 app.UseExceptionHandler();
 app.UseStatusCodePages();           // 401/403/404/429 without a body -> ProblemDetails
 app.UseSerilogRequestLogging();
 
-app.UseSwagger();
-app.UseSwaggerUI(c =>
+// API documentation is an information leak in production (every route, DTO and auth scheme): development, or opt in with Swagger:Enabled=true.
+if (app.Environment.IsDevelopment() || app.Configuration.GetValue("Swagger:Enabled", false))
 {
-    c.SwaggerEndpoint("/swagger/v1/swagger.json", "TechBazar BD API v1");
-    c.DocumentTitle = "TechBazar BD API";
-});
+    app.UseSwagger();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "TechBazar BD API v1");
+        c.DocumentTitle = "TechBazar BD API";
+    });
+}
 
 if (!app.Environment.IsDevelopment()) app.UseHsts();
-app.UseHttpsRedirection();
+// TLS is normally terminated by a reverse proxy / load balancer in front of the container; turn this off there (Security:HttpsRedirection=false).
+if (app.Configuration.GetValue("Security:HttpsRedirection", true)) app.UseHttpsRedirection();
+
+// Compression sits outside output caching (entries are cached uncompressed) and skips the token-bearing auth endpoints.
+app.UseWhen(c => !c.Request.Path.StartsWithSegments("/api/v1/auth"), b => b.UseResponseCompression());
 // Admin-uploaded images. Served with nosniff + long cache; the file names are server generated GUIDs.
 var storage = app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<StorageOptions>>().Value;
 Directory.CreateDirectory(storage.RootPath!);
@@ -71,6 +92,9 @@ app.UseStaticFiles(new StaticFileOptions
     OnPrepareResponse = ctx =>
     {
         ctx.Context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+        // Even if a hostile file slipped through, a browser must not render or script it.
+        ctx.Context.Response.Headers.ContentSecurityPolicy = "default-src 'none'; sandbox";
+        ctx.Context.Response.Headers["Cross-Origin-Resource-Policy"] = "same-site";
         ctx.Context.Response.Headers.CacheControl = "public,max-age=31536000,immutable";
     },
 });
@@ -83,6 +107,11 @@ app.UseOutputCache();
 
 app.MapControllers();
 app.MapHealthChecks("/health").AllowAnonymous();
+
+if (app.Environment.IsProduction() && !app.Configuration.GetSection("ForwardedHeaders:KnownProxies").GetChildren().Any()
+    && !app.Configuration.GetSection("ForwardedHeaders:KnownNetworks").GetChildren().Any())
+    app.Logger.LogWarning("ForwardedHeaders:KnownProxies/KnownNetworks are not configured: behind a reverse proxy every client shares the proxy's IP, " +
+                          "so per-IP rate limits become global. Configure the proxy addresses (see docs/security.md).");
 
 await InitialiseDatabaseAsync(app);
 app.Run();

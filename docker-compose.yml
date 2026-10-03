@@ -1,0 +1,71 @@
+# LOCAL DEVELOPMENT stack: SQL Server + API + SSR storefront.  NOT a production deployment (see docs/docker.md).
+#   cp .env.example .env   # then fill in the three secrets
+#   docker compose up --build
+# Storefront http://localhost:4000 · API/Swagger http://localhost:5080/swagger · SQL Server 127.0.0.1:1433
+name: techbazar
+
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    restart: unless-stopped
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?set it in .env (copy .env.example)}
+    ports:
+      - "127.0.0.1:1433:1433"   # loopback only: connect SSMS / Azure Data Studio to localhost,1433 as sa
+    volumes:
+      - sqldata:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q \"SELECT 1\" -b > /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  api:
+    build:
+      context: ./backend
+    image: techbazar-api:dev
+    restart: unless-stopped
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    environment:
+      # Development => appsettings.Development.json (Seed:Enabled/ApplyMigrations = true). Both are also set explicitly
+      # below because Program.cs applies migrations and runs the (idempotent) seeder only when these flags are true.
+      ASPNETCORE_ENVIRONMENT: Development
+      Seed__ApplyMigrations: "true"
+      Seed__Enabled: "true"
+      Seed__AdminEmail: admin@techbazar.bd
+      Seed__AdminPassword: ${SEED_ADMIN_PASSWORD:?set it in .env (copy .env.example)}
+      ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=TechBazarBD;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;MultipleActiveResultSets=true"
+      Jwt__Key: ${JWT_KEY:?set it in .env (copy .env.example)}
+      # The browser only ever talks to the storefront origin (it proxies /api and /uploads to this container).
+      Payments__PublicApiBaseUrl: http://localhost:4000
+      Payments__StorefrontBaseUrl: http://localhost:4000
+      Cors__AllowedOrigins__0: http://localhost:4000
+      Storage__RootPath: /data/uploads
+    ports:
+      - "127.0.0.1:5080:8080"
+    volumes:
+      - uploads:/data/uploads
+
+  web:
+    build:
+      context: ./frontend
+    image: techbazar-web:dev
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      API_URL: http://api:8080
+      NG_ALLOWED_HOSTS: localhost
+      PORT: "4000"
+    ports:
+      - "127.0.0.1:4000:4000"
+
+volumes:
+  sqldata:
+  uploads:

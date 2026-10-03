@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OutputCaching;
 using TechBazar.Api.Extensions;
@@ -9,6 +10,7 @@ using TechBazar.Application.Common;
 namespace TechBazar.Api.Controllers;
 
 [OutputCache(PolicyName = Policies.CatalogCache)]
+[AllowAnonymous]
 public sealed class ProductsController(IProductService products) : ApiControllerBase
 {
     /// <summary>List products with filtering, sorting and pagination.</summary>
@@ -36,6 +38,7 @@ public sealed class ProductsController(IProductService products) : ApiController
 }
 
 [OutputCache(PolicyName = Policies.CatalogCache)]
+[AllowAnonymous]
 public sealed class CategoriesController(ICategoryService categories) : ApiControllerBase
 {
     /// <summary>Full category tree with product counts.</summary>
@@ -50,6 +53,7 @@ public sealed class CategoriesController(ICategoryService categories) : ApiContr
 }
 
 [OutputCache(PolicyName = Policies.CatalogCache)]
+[AllowAnonymous]
 public sealed class BrandsController(IBrandService brands) : ApiControllerBase
 {
     [HttpGet]
@@ -57,6 +61,7 @@ public sealed class BrandsController(IBrandService brands) : ApiControllerBase
         Ok(await brands.GetAllAsync(ct));
 }
 
+[AllowAnonymous]
 public sealed class SearchController(IProductService products, ISearchService search) : ApiControllerBase
 {
     /// <summary>Full search results (same filters/sort/paging as /products, <c>q</c> required).</summary>

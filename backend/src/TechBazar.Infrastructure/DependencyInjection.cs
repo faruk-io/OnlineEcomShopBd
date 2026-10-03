@@ -9,11 +9,11 @@ using TechBazar.Application.Orders;
 using TechBazar.Application.Payments;
 using TechBazar.Application.Storage;
 using TechBazar.Infrastructure.Email;
-using TechBazar.Infrastructure.Payments;
-using TechBazar.Infrastructure.Storage;
 using TechBazar.Infrastructure.Identity;
+using TechBazar.Infrastructure.Payments;
 using TechBazar.Infrastructure.Persistence;
 using TechBazar.Infrastructure.Seeding;
+using TechBazar.Infrastructure.Storage;
 
 namespace TechBazar.Infrastructure;
 
@@ -57,7 +57,8 @@ public static class DependencyInjection
         services.AddSingleton<IEmailSender, LoggingEmailSender>();
         services.AddSingleton<IFileStorage, LocalFileStorage>();
         services.AddSingleton<IPaymentGateway, CashOnDeliveryGateway>();
-        services.AddHttpClient<SslCommerzGateway>(c => c.Timeout = TimeSpan.FromSeconds(20));
+        // The validation call carries store_passwd in its query string (SSLCommerz API design): never let the HTTP client log that URL.
+        services.AddHttpClient<SslCommerzGateway>(c => c.Timeout = TimeSpan.FromSeconds(20)).RemoveAllLoggers();
         services.AddTransient<IPaymentGateway>(sp => sp.GetRequiredService<SslCommerzGateway>());
 
         services.AddSingleton<ITokenService, TokenService>();

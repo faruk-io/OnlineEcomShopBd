@@ -176,9 +176,16 @@ public static class BuildCompatibilityChecker
 
     public static string SlotName(BuildSlot s) => s switch
     {
-        BuildSlot.Cpu => "CPU", BuildSlot.Motherboard => "Motherboard", BuildSlot.Ram => "RAM", BuildSlot.Storage => "Storage",
-        BuildSlot.Gpu => "Graphics card", BuildSlot.Psu => "Power supply", BuildSlot.Case => "Case", BuildSlot.Cooler => "CPU cooler",
-        BuildSlot.Monitor => "Monitor", _ => s.ToString(),
+        BuildSlot.Cpu => "CPU",
+        BuildSlot.Motherboard => "Motherboard",
+        BuildSlot.Ram => "RAM",
+        BuildSlot.Storage => "Storage",
+        BuildSlot.Gpu => "Graphics card",
+        BuildSlot.Psu => "Power supply",
+        BuildSlot.Case => "Case",
+        BuildSlot.Cooler => "CPU cooler",
+        BuildSlot.Monitor => "Monitor",
+        _ => s.ToString(),
     };
 
     private static bool IsM2(BuildPart d) =>

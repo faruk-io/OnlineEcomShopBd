@@ -56,7 +56,7 @@ describe('HTTP interceptors', () => {
 
       http.expectOne('/api/v1/cart').flush({}, { status: 401, statusText: 'Unauthorized' });
       const refresh = http.expectOne('/api/v1/auth/refresh');
-      expect(refresh.request.body).toEqual({ refreshToken: 'refresh-1' });
+      expect(refresh.request.body).toEqual({});   // cookie mode: the HttpOnly cookie carries the token
       refresh.flush(authResponse(2));
 
       const replay = http.expectOne('/api/v1/cart');

@@ -1,8 +1,8 @@
+using FluentValidation;
+using FluentValidation.Results;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using FluentValidation;
-using FluentValidation.Results;
 using TechBazar.Application.Abstractions;
 using TechBazar.Application.Common;
 using TechBazar.Application.Email;

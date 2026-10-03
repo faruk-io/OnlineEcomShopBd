@@ -4,13 +4,30 @@ import {
   isMainModule,
   writeResponseToNodeResponse,
 } from '@angular/ssr/node';
+import compression from 'compression';
 import express from 'express';
 import { join } from 'node:path';
+import { appendForwardedFor, baseSecurityHeaders, bodyLimitFor, contentSecurityPolicy, isSafeUploadPath } from './server-security';
 
 const browserDistFolder = join(import.meta.dirname, '../browser');
 
 const app = express();
 const angularApp = new AngularNodeAppEngine();
+
+// Hardening applies to the built server (`node server.mjs`), not to the Angular dev server that merely imports `reqHandler`.
+const standalone = isMainModule(import.meta.url) || !!process.env['pm_id'];
+app.disable('x-powered-by');
+app.disable('etag'); // weak validators on dynamic SSR output only cost CPU
+
+const hsts = process.env['HSTS'] === '1'; // enable ONLY when the public site is served over HTTPS
+const securityHeaders = baseSecurityHeaders(hsts);
+app.use((_req, res, next) => {
+  for (const [name, value] of Object.entries(securityHeaders)) res.setHeader(name, value);
+  next();
+});
+
+// gzip/brotli for HTML, JS, CSS, JSON, SVG. The token-bearing auth endpoints are skipped on purpose (BREACH-style attacks).
+app.use(compression({ filter: (req, res) => !req.originalUrl.startsWith('/api/v1/auth') && compression.filter(req, res) }));
 
 /**
  * Same-origin API gateway. The browser (and the server-side renderer) call a relative `/api/v1/...`;
@@ -20,34 +37,47 @@ const angularApp = new AngularNodeAppEngine();
 const API_URL = (process.env['API_URL'] ?? 'http://localhost:5080').replace(/\/$/, '');
 const HOP_BY_HOP = new Set(['connection', 'keep-alive', 'transfer-encoding', 'upgrade', 'host', 'content-length', 'te', 'trailer', 'content-encoding']);
 
-app.use('/api', express.raw({ type: () => true, limit: '1mb' }), async (req, res) => {
+const UPSTREAM_TIMEOUT_MS = 30_000;
+
+app.use('/api', (req, res, next) => express.raw({ type: () => true, limit: bodyLimitFor(req.originalUrl) })(req, res, next), async (req, res) => {
   try {
     const headers = new Headers();
     for (const [name, value] of Object.entries(req.headers)) {
       if (value !== undefined && !HOP_BY_HOP.has(name)) headers.set(name, Array.isArray(value) ? value.join(',') : value);
     }
-    headers.set('x-forwarded-for', req.socket.remoteAddress ?? 'unknown');
+    // Append (never overwrite) so a trusted proxy chain in front of this server survives; the API only believes entries from the
+    // proxies it is configured to trust (ForwardedHeaders:KnownProxies / KnownNetworks).
+    headers.set('x-forwarded-for', appendForwardedFor(req.headers['x-forwarded-for'], req.socket.remoteAddress));
+    headers.set('x-forwarded-proto', (req.headers['x-forwarded-proto'] as string | undefined) ?? req.protocol);
     const hasBody = !['GET', 'HEAD'].includes(req.method) && Buffer.isBuffer(req.body) && req.body.length > 0;
     const upstream = await fetch(`${API_URL}${req.originalUrl}`, {
       method: req.method,
       headers,
       body: hasBody ? new Uint8Array(req.body as Buffer) : undefined,
       redirect: 'manual',
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
     res.status(upstream.status);
     upstream.headers.forEach((value, name) => {
-      if (!HOP_BY_HOP.has(name)) res.setHeader(name, value);
+      if (!HOP_BY_HOP.has(name) && name !== 'set-cookie') res.setHeader(name, value);
     });
+    // fetch() folds multiple Set-Cookie headers into one string; forward them individually (the refresh-token cookie depends on this).
+    for (const cookie of upstream.headers.getSetCookie()) res.append('set-cookie', cookie);
     res.send(Buffer.from(await upstream.arrayBuffer()));
-  } catch {
-    res.status(502).type('application/problem+json').send({ status: 502, title: 'The API is unreachable.' });
+  } catch (error) {
+    const timedOut = error instanceof Error && error.name === 'TimeoutError';
+    res.status(timedOut ? 504 : 502).type('application/problem+json').send({ status: timedOut ? 504 : 502, title: timedOut ? 'The API timed out.' : 'The API is unreachable.' });
   }
 });
 
 /** Admin-uploaded product images are stored by (and served from) the API host; stream them through unchanged. */
 app.use('/uploads', async (req, res) => {
+  if (!['GET', 'HEAD'].includes(req.method) || !isSafeUploadPath(req.path)) {
+    res.status(404).end();
+    return;
+  }
   try {
-    const upstream = await fetch(`${API_URL}/uploads${req.url}`, { method: req.method === 'HEAD' ? 'HEAD' : 'GET', redirect: 'manual' });
+    const upstream = await fetch(`${API_URL}/uploads${req.path}`, { method: req.method, redirect: 'manual', signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) });
     res.status(upstream.status);
     upstream.headers.forEach((value, name) => {
       if (!HOP_BY_HOP.has(name)) res.setHeader(name, value);
@@ -75,7 +105,15 @@ app.use(
 app.use((req, res, next) => {
   angularApp
     .handle(req)
-    .then((response) => (response ? writeResponseToNodeResponse(response, res) : next()))
+    .then(async (response) => {
+      if (!response) return next();
+      if (!standalone || !(response.headers.get('content-type') ?? '').includes('text/html')) return writeResponseToNodeResponse(response, res);
+      // Hash-based CSP computed from the page that was actually rendered (inline hydration / event-replay scripts differ per build).
+      const html = await response.text();
+      const headers = new Headers(response.headers);
+      headers.set('Content-Security-Policy', contentSecurityPolicy(html));
+      return writeResponseToNodeResponse(new Response(html, { status: response.status, statusText: response.statusText, headers }), res);
+    })
     .catch(next);
 });
 

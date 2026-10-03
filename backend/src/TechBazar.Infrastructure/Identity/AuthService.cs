@@ -48,8 +48,13 @@ public sealed class AuthService(
     public async Task<AuthResponse> LoginAsync(LoginRequest request, string? ipAddress, CancellationToken ct = default)
     {
         var user = await users.FindByEmailAsync(request.Email.Trim());
-        // Same message for unknown user / wrong password / locked / disabled: do not leak which accounts exist.
-        if (user is null || !user.IsActive) throw new AuthenticationFailedException(InvalidCredentials);
+        // Same message for unknown user / wrong password / disabled: do not leak which accounts exist. The (deliberately slow) password
+        // hash is computed on every path so response time does not reveal it either.
+        if (user is null || !user.IsActive)
+        {
+            _ = users.PasswordHasher.HashPassword(new ApplicationUser(), request.Password);
+            throw new AuthenticationFailedException(InvalidCredentials);
+        }
         if (await users.IsLockedOutAsync(user)) throw new AuthenticationFailedException("Account temporarily locked. Try again later.");
 
         if (!await users.CheckPasswordAsync(user, request.Password))
@@ -65,6 +70,7 @@ public sealed class AuthService(
     public async Task<AuthResponse> RefreshAsync(RefreshRequest request, string? ipAddress, CancellationToken ct = default)
     {
         var now = DateTime.UtcNow;
+        if (string.IsNullOrWhiteSpace(request.RefreshToken)) throw new AuthenticationFailedException("Invalid refresh token.");
         var hash = tokens.Hash(request.RefreshToken);
         var stored = await db.RefreshTokens.FirstOrDefaultAsync(t => t.TokenHash == hash, ct)
                      ?? throw new AuthenticationFailedException("Invalid refresh token.");
@@ -99,14 +105,19 @@ public sealed class AuthService(
         return await BuildResponseAsync(user, newToken, newHash, ipAddress, now, ct);
     }
 
-    public async Task LogoutAsync(Guid userId, string refreshToken, CancellationToken ct = default)
+    public async Task LogoutAsync(string refreshToken, CancellationToken ct = default)
     {
+        if (string.IsNullOrWhiteSpace(refreshToken)) return;
         var hash = tokens.Hash(refreshToken);
         var now = DateTime.UtcNow;
+        // Possession of the (unguessable, 512-bit) token is the credential, so this works after the access token expired.
         await db.RefreshTokens
-            .Where(t => t.UserId == userId && t.TokenHash == hash && t.RevokedAt == null)
+            .Where(t => t.TokenHash == hash && t.RevokedAt == null)
             .ExecuteUpdateAsync(s => s.SetProperty(t => t.RevokedAt, now).SetProperty(t => t.RevokedReason, "Logout"), ct);
     }
+
+    public Task LogoutAllAsync(Guid userId, CancellationToken ct = default) =>
+        RevokeAllAsync(userId, "Logout everywhere", DateTime.UtcNow, ct);
 
     public async Task<UserDto> GetProfileAsync(Guid userId, CancellationToken ct = default)
     {

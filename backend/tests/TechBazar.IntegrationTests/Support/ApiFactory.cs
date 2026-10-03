@@ -22,13 +22,22 @@ namespace TechBazar.IntegrationTests.Support;
 public class ApiFactory : WebApplicationFactory<Program>
 {
     private readonly int _authPermitLimit;
+    private readonly IReadOnlyDictionary<string, string?> _extra;
 
-    public ApiFactory() : this(1000) { }
+    public ApiFactory() : this(1000, null) { }
 
-    private ApiFactory(int authPermitLimit) => _authPermitLimit = authPermitLimit;
+    private ApiFactory(int authPermitLimit, IReadOnlyDictionary<string, string?>? extra)
+    {
+        _authPermitLimit = authPermitLimit;
+        _extra = extra ?? new Dictionary<string, string?>();
+    }
 
     /// <summary>Factory with a tight auth rate limit, for rate-limiter tests.</summary>
-    public static ApiFactory WithAuthLimit(int permits) => new(permits);
+    public static ApiFactory WithAuthLimit(int permits) => new(permits, null);
+
+    /// <summary>Factory with extra / overriding configuration (e.g. a tiny global rate limit, secure cookies).</summary>
+    public static ApiFactory WithConfig(params (string Key, string Value)[] settings) =>
+        new(1000, settings.ToDictionary(x => x.Key, x => (string?)x.Value));
 
     public const string AdminEmail = "admin@techbazar.test";
     public const string AdminPassword = "AdminPassw0rd!";
@@ -49,6 +58,7 @@ public class ApiFactory : WebApplicationFactory<Program>
             ["RateLimiting:Auth:PermitLimit"] = _authPermitLimit.ToString(),
             ["RateLimiting:Auth:WindowSeconds"] = "60",
             ["RateLimiting:Public:PermitLimit"] = "10000",
+            ["RateLimiting:Global:PermitLimit"] = "100000",
             ["Storage:RootPath"] = _uploads,
             ["Payments:PublicApiBaseUrl"] = "https://api.test",
             ["Payments:StorefrontBaseUrl"] = "https://shop.test",
@@ -58,6 +68,7 @@ public class ApiFactory : WebApplicationFactory<Program>
             ["Seed:AdminPassword"] = AdminPassword,
             ["ConnectionStrings:DefaultConnection"] = "unused-in-tests",
         }));
+        builder.ConfigureAppConfiguration((_, cfg) => cfg.AddInMemoryCollection(_extra));
 
         builder.ConfigureServices(services =>
         {

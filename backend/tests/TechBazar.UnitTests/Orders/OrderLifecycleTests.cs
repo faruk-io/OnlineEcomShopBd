@@ -156,7 +156,7 @@ public class OrderLifecycleTests
         await s.AddToCart("Ryzen 5 5600 Processor");
         var placed = await s.Place(PaymentMethod.Online);
         await s.Get<IPaymentService>().HandleCallbackAsync("sslcommerz", CallbackKind.Ipn, new Dictionary<string, string>
-            { ["tran_id"] = $"{placed.Order.OrderNumber}-1", ["status"] = "VALID", ["amount"] = placed.Order.GrandTotal.ToString("0.00"), ["currency"] = "BDT", ["sig"] = "ok" });
+        { ["tran_id"] = $"{placed.Order.OrderNumber}-1", ["status"] = "VALID", ["amount"] = placed.Order.GrandTotal.ToString("0.00"), ["currency"] = "BDT", ["sig"] = "ok" });
 
         var cancelled = await s.Get<IOrderService>().CancelAsync(s.UserId, placed.Order.OrderNumber);
         Assert.Equal(PaymentStatus.Refunded, cancelled.PaymentStatus);

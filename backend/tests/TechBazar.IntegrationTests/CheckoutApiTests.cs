@@ -138,7 +138,7 @@ public class CheckoutApiTests(ApiFactory factory) : IClassFixture<ApiFactory>
         Assert.Equal("https://sandbox.gateway.test/pay/" + tran, placed.Payment!.RedirectUrl);
 
         FormUrlEncodedContent Form(string amount, string sig = "ok", string status = "VALID") => new(new Dictionary<string, string>
-            { ["tran_id"] = tran, ["status"] = status, ["amount"] = amount, ["currency"] = "BDT", ["sig"] = sig });
+        { ["tran_id"] = tran, ["status"] = status, ["amount"] = amount, ["currency"] = "BDT", ["sig"] = sig });
 
         // forged or underpaid -> rejected (non-200 so the gateway retries/alerts), nothing changes
         Assert.Equal(HttpStatusCode.BadRequest, (await _client.PostAsync("/api/v1/payments/sslcommerz/ipn", Form(placed.Order.GrandTotal.ToString("0.00"), sig: "forged"))).StatusCode);

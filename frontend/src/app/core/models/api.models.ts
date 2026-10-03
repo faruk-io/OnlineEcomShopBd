@@ -190,7 +190,8 @@ export interface UserDto {
 export interface AuthResponse {
   accessToken: string;
   accessTokenExpiresAt: string;
-  refreshToken: string;
+  /** Null for the web client: the refresh token travels in an HttpOnly cookie. */
+  refreshToken: string | null;
   refreshTokenExpiresAt: string;
   user: UserDto;
 }
