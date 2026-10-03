@@ -19,7 +19,7 @@
     <!-- Tests (test providers only; production stays SQL Server) -->
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.20" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.0.20" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
   </ItemGroup>
