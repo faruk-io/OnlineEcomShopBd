@@ -1,0 +1,125 @@
+<header class="site-header">
+  <div class="topbar">
+    <div class="container topbar-in">
+      <span>Genuine products · Official warranty · Delivery across Bangladesh</span>
+      <span class="top-links">
+        <a routerLink="/shop" [queryParams]="{ onSale: true }">Offers</a>
+        <a routerLink="/compare">Compare</a>
+        <a routerLink="/account/orders">Track order</a>
+      </span>
+    </div>
+  </div>
+
+  <div class="container bar">
+    <button type="button" class="icon-btn menu-btn" (click)="drawerOpen.set(true)" aria-label="Open menu" aria-controls="mobile-nav" [attr.aria-expanded]="drawerOpen()">
+      <app-icon name="menu" [size]="24" />
+    </button>
+
+    <a routerLink="/" class="logo" aria-label="TechBazar BD — home">
+      <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><rect width="34" height="34" rx="9" fill="#fbbf24"/><path d="M9 11h16M17 11v13" stroke="#1f1300" stroke-width="3.2" stroke-linecap="round"/><circle cx="25" cy="24" r="2.6" fill="#4338ca"/></svg>
+      <span class="logo-text">TechBazar<small>BD</small></span>
+    </a>
+
+    <app-search-box class="search" />
+
+    <nav class="actions" aria-label="Account and shopping">
+      @if (auth.isAuthenticated()) {
+        <a class="action" routerLink="/account/profile" routerLinkActive="on">
+          <app-icon name="user" [size]="22" /><span class="lbl">Hi, {{ firstName() }}</span>
+        </a>
+        <button type="button" class="action lbl-only" (click)="logout()">Logout</button>
+      } @else {
+        <a class="action" routerLink="/login">
+          <app-icon name="user" [size]="22" /><span class="lbl">Login<span class="sep"> / </span>Register</span>
+          <span class="visually-hidden">account</span>
+        </a>
+      }
+      <a class="action" routerLink="/wishlist" routerLinkActive="on">
+        <app-icon name="heart" [size]="22" /><span class="lbl">Wishlist</span>
+        @if (wishlist.count() > 0) { <span class="badge" aria-hidden="true">{{ wishlist.count() }}</span> }
+        <span class="visually-hidden">{{ wishlist.count() }} items</span>
+      </a>
+      <a class="action" routerLink="/compare" routerLinkActive="on">
+        <app-icon name="compare" [size]="22" /><span class="lbl">Compare</span>
+        @if (compare.count() > 0) { <span class="badge" aria-hidden="true">{{ compare.count() }}</span> }
+        <span class="visually-hidden">{{ compare.count() }} items</span>
+      </a>
+      <a class="action cart" routerLink="/cart" routerLinkActive="on">
+        <app-icon name="cart" [size]="22" /><span class="lbl">Cart</span>
+        @if (cart.count() > 0) { <span class="badge" aria-hidden="true">{{ cart.count() }}</span> }
+        <span class="visually-hidden">{{ cart.count() }} items</span>
+      </a>
+    </nav>
+  </div>
+
+  <!-- Desktop mega menu -->
+  <nav class="mega" aria-label="Product categories">
+    <ul class="container mega-list">
+      @for (root of tree(); track root.id) {
+        <li class="mega-item" #item (mouseenter)="showMega(root.slug)" (mouseleave)="hideMegaSoon()" (focusout)="onMegaFocusOut($event, item)">
+          <a class="mega-link" [routerLink]="['/category', root.slug]" routerLinkActive="on">{{ root.name }}</a>
+          @if (root.children.length) {
+            <button type="button" class="mega-toggle" (click)="toggleMega(root.slug)" [attr.aria-expanded]="openMega() === root.slug"
+              [attr.aria-controls]="'mega-' + root.slug" [attr.aria-label]="'Show ' + root.name + ' subcategories'">
+              <app-icon name="chevron-down" [size]="14" />
+            </button>
+            @if (openMega() === root.slug) {
+              <div class="mega-panel" [id]="'mega-' + root.slug" role="group" [attr.aria-label]="root.name + ' subcategories'">
+                <ul class="mega-cols">
+                  @for (c of root.children; track c.id) {
+                    <li>
+                      <a [routerLink]="['/category', c.slug]">
+                        <img [src]="c.imageUrl || '/images/placeholder.svg'" alt="" width="40" height="40" loading="lazy" />
+                        <span><span class="c-name">{{ c.name }}</span><span class="c-count">{{ c.productCount }} products</span></span>
+                      </a>
+                    </li>
+                  }
+                </ul>
+                <a class="mega-all" [routerLink]="['/category', root.slug]">Shop all {{ root.name }} <app-icon name="chevron-right" [size]="14" /></a>
+              </div>
+            }
+          }
+        </li>
+      }
+    </ul>
+  </nav>
+</header>
+
+<!-- Mobile drawer -->
+@if (drawerOpen()) {
+  <div class="overlay" (click)="drawerOpen.set(false)" aria-hidden="true"></div>
+  <nav id="mobile-nav" class="drawer" aria-label="Mobile menu">
+    <div class="drawer-head">
+      <strong>Menu</strong>
+      <button type="button" #closeBtn class="icon-btn" (click)="drawerOpen.set(false)" aria-label="Close menu"><app-icon name="close" [size]="22" /></button>
+    </div>
+    <ul class="drawer-list">
+      @for (root of tree(); track root.id) {
+        <li>
+          <div class="drawer-row">
+            <a [routerLink]="['/category', root.slug]">{{ root.name }}</a>
+            @if (root.children.length) {
+              <button type="button" class="icon-btn" (click)="expandedMobile.set(expandedMobile() === root.slug ? null : root.slug)"
+                [attr.aria-expanded]="expandedMobile() === root.slug" [attr.aria-label]="'Toggle ' + root.name + ' subcategories'">
+                <app-icon name="chevron-down" [size]="18" />
+              </button>
+            }
+          </div>
+          @if (expandedMobile() === root.slug) {
+            <ul class="drawer-sub">
+              @for (c of root.children; track c.id) { <li><a [routerLink]="['/category', c.slug]">{{ c.name }}</a></li> }
+            </ul>
+          }
+        </li>
+      }
+      <li class="drawer-extra"><a routerLink="/shop" [queryParams]="{ onSale: true }">Offers &amp; deals</a></li>
+      <li class="drawer-extra"><a routerLink="/compare">Compare</a></li>
+      @if (auth.isAuthenticated()) {
+        <li class="drawer-extra"><a routerLink="/account/profile">My account</a></li>
+        <li class="drawer-extra"><button type="button" (click)="logout()">Logout</button></li>
+      } @else {
+        <li class="drawer-extra"><a routerLink="/login">Login / Register</a></li>
+      }
+    </ul>
+  </nav>
+}
