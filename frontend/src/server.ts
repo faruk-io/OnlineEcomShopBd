@@ -44,6 +44,20 @@ app.use('/api', express.raw({ type: () => true, limit: '1mb' }), async (req, res
   }
 });
 
+/** Admin-uploaded product images are stored by (and served from) the API host; stream them through unchanged. */
+app.use('/uploads', async (req, res) => {
+  try {
+    const upstream = await fetch(`${API_URL}/uploads${req.url}`, { method: req.method === 'HEAD' ? 'HEAD' : 'GET', redirect: 'manual' });
+    res.status(upstream.status);
+    upstream.headers.forEach((value, name) => {
+      if (!HOP_BY_HOP.has(name)) res.setHeader(name, value);
+    });
+    res.send(Buffer.from(await upstream.arrayBuffer()));
+  } catch {
+    res.status(502).end();
+  }
+});
+
 /**
  * Serve static files from /browser
  */

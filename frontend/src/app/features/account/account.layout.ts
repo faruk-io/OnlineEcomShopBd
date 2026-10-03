@@ -16,6 +16,8 @@ import { BreadcrumbComponent } from '../../shared/breadcrumb.component';
           <ul>
             <li><a routerLink="profile" routerLinkActive="on" ariaCurrentWhenActive="page">Profile</a></li>
             <li><a routerLink="orders" routerLinkActive="on" ariaCurrentWhenActive="page">Order history</a></li>
+            <li><a routerLink="addresses" routerLinkActive="on" ariaCurrentWhenActive="page">Address book</a></li>
+            @if (auth.isAdmin()) { <li><a routerLink="/admin">Admin panel</a></li> }
             <li><a routerLink="/wishlist">Wishlist</a></li>
             <li><button type="button" (click)="logout()">Logout</button></li>
           </ul>
