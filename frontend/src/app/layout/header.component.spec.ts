@@ -4,7 +4,7 @@ import { provideRouter } from '@angular/router';
 import { CategoryTreeNode } from '../core/models/api.models';
 import { CartService } from '../core/services/cart.service';
 import { CompareService } from '../core/services/compare.service';
-import { authResponse, provideTestHttp } from '../core/testing/test-helpers';
+import { USER, authResponse, provideTestHttp } from '../core/testing/test-helpers';
 import { AuthService } from '../core/services/auth.service';
 import { HeaderComponent } from './header.component';
 
@@ -94,6 +94,30 @@ describe('HeaderComponent', () => {
 
     expect(root.querySelector('a[href="/account/profile"]')!.textContent).toContain('Hi, Rahim');
     expect(root.querySelector('a[href="/login"]')).toBeNull();
+  });
+
+  it('shows an Admin link only to admins', async () => {
+    const { f, root } = await create();
+    const auth = TestBed.inject(AuthService);
+    const signIn = (n: number, roles: string[]) => {
+      auth.login('a@b.com', 'x').subscribe();
+      http.expectOne('/api/v1/auth/login').flush(authResponse(n, { ...USER, roles }));
+      TestBed.tick();
+      http.expectOne('/api/v1/cart').flush({ items: [], itemCount: 0, subtotal: 0, savings: 0 });
+      http.expectOne('/api/v1/wishlist').flush([]);
+      f.detectChanges();
+    };
+
+    signIn(1, ['Customer']);
+    expect(root.querySelector('a[href="/admin"]')).toBeNull();
+
+    auth.logout();
+    http.match('/api/v1/auth/logout');
+    TestBed.tick();
+    f.detectChanges();
+
+    signIn(2, ['Admin']);
+    expect(root.querySelector('a[href="/admin"]')!.textContent).toContain('Admin');
   });
 
   it('mobile drawer: opens with a close button, lists categories, closes on Escape', async () => {

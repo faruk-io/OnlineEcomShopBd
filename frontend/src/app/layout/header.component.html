@@ -27,6 +27,7 @@
         <a class="action" routerLink="/account/profile" routerLinkActive="on">
           <app-icon name="user" [size]="22" /><span class="lbl">Hi, {{ firstName() }}</span>
         </a>
+        @if (auth.isAdmin()) { <a class="action lbl-only" routerLink="/admin" routerLinkActive="on">Admin</a> }
         <button type="button" class="action lbl-only" (click)="logout()">Logout</button>
       } @else {
         <a class="action" routerLink="/login">
@@ -116,6 +117,7 @@
       <li class="drawer-extra"><a routerLink="/compare">Compare</a></li>
       @if (auth.isAuthenticated()) {
         <li class="drawer-extra"><a routerLink="/account/profile">My account</a></li>
+        @if (auth.isAdmin()) { <li class="drawer-extra"><a routerLink="/admin">Admin dashboard</a></li> }
         <li class="drawer-extra"><button type="button" (click)="logout()">Logout</button></li>
       } @else {
         <li class="drawer-extra"><a routerLink="/login">Login / Register</a></li>
