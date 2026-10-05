@@ -41,6 +41,10 @@ builder.Services.AddProblemDetails(o => o.CustomizeProblemDetails = ctx =>
     ctx.ProblemDetails.Extensions["traceId"] = ctx.HttpContext.TraceIdentifier;
 });
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+// GlobalExceptionHandler maps (and, for real 500s, logs) every exception itself; without this the framework also logs each
+// handled 401/409/404 as an Error "unhandled exception" with a stack trace.
+builder.Services.Configure<Microsoft.AspNetCore.Builder.ExceptionHandlerOptions>(o =>
+    o.SuppressDiagnosticsCallback = ctx => ctx.ExceptionHandledBy is GlobalExceptionHandler);
 
 builder.Services.AddApplication();
 builder.Services.AddScoped<CatalogCache>();
@@ -60,9 +64,10 @@ var app = builder.Build();
 // Must be first: everything after (rate limiting, https redirection, logging) should see the real client address/scheme.
 app.UseForwardedHeaders();
 app.UseMiddleware<SecurityHeadersMiddleware>();
+// Request logging wraps the exception handler so it records the mapped status (401/409/...) instead of 500 for handled exceptions.
+app.UseSerilogRequestLogging();
 app.UseExceptionHandler();
 app.UseStatusCodePages();           // 401/403/404/429 without a body -> ProblemDetails
-app.UseSerilogRequestLogging();
 
 // API documentation is an information leak in production (every route, DTO and auth scheme): development, or opt in with Swagger:Enabled=true.
 if (app.Environment.IsDevelopment() || app.Configuration.GetValue("Swagger:Enabled", false))
