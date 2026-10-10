@@ -22,7 +22,7 @@
     "@angular/platform-browser": "^22.2.0",
     "@angular/platform-server": "^22.2.0",
     "@angular/router": "^22.2.0",
-    "@angular/ssr": "^22.2.1",
+    "@angular/ssr": "^22.2.2",
     "compression": "^1.8.2",
     "express": "^5.1.0",
     "qrcode-generator": "^2.0.4",
@@ -30,8 +30,8 @@
     "tslib": "^2.3.0"
   },
   "devDependencies": {
-    "@angular/build": "^22.2.1",
-    "@angular/cli": "^22.2.1",
+    "@angular/build": "^22.2.2",
+    "@angular/cli": "^22.2.2",
     "@angular/compiler-cli": "^22.2.0",
     "@playwright/test": "^1.63.0",
     "@types/compression": "^1.8.1",
@@ -39,10 +39,10 @@
     "@types/node": "^22.12.0",
     "angular-eslint": "^22.5.0",
     "eslint": "^10.12.0",
-    "jsdom": "^30.0.0",
+    "jsdom": "^30.1.2",
     "prettier": "^3.8.1",
     "typescript": "~6.0.2",
-    "typescript-eslint": "^8.71.0",
+    "typescript-eslint": "^8.71.1",
     "vitest": "^5.0.0"
   }
 }
